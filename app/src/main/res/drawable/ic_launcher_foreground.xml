@@ -1,0 +1,27 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="256"
+    android:viewportHeight="256">
+    <!-- 自适应图标安全区约为中心 66% 圆，蜜蜂整体缩放到 66% 并居中，保证完整显示 -->
+    <group
+        android:scaleX="0.66"
+        android:scaleY="0.66"
+        android:translateX="43.52"
+        android:translateY="43.52">
+        <path android:pathData="M187.483,177C185.839,186.039 180.354,194.045 172.286,198.815L132.071,222.593C129.56,224.077 126.44,224.077 123.929,222.593L83.7139,198.815C75.6457,194.045 70.1611,186.039 68.5166,177H187.483ZM128,32C169.14,32 203.027,63.054 207.499,103H208C219.046,103 228,111.954 228,123V139C228,150.046 219.046,159 208,159H196V112C196,74.4446 165.555,44 128,44C90.4446,44 60,74.4446 60,112V159H48C36.9543,159 28,150.046 28,139V123C28,111.954 36.9543,103 48,103H48.501C52.9732,63.054 86.8599,32 128,32ZM188,159H68V137H188V159ZM128,53C161.137,53 188,79.8629 188,113V119H68V113C68,79.8629 94.8629,53 128,53ZM105,79C100.582,79 97,82.5817 97,87V95C97,99.4183 100.582,103 105,103C109.418,103 113,99.4183 113,95V87C113,82.5817 109.418,79 105,79ZM151,79C146.582,79 143,82.5817 143,87V95C143,99.4183 146.582,103 151,103C155.418,103 159,99.4183 159,95V87C159,82.5817 155.418,79 151,79Z">
+            <aapt:attr name="android:fillColor">
+                <gradient
+                    android:type="linear"
+                    android:startX="65"
+                    android:startY="32"
+                    android:endX="118"
+                    android:endY="178.5">
+                    <item android:offset="0" android:color="#D9FFFFFF" />
+                    <item android:offset="1" android:color="#FFFFFFFF" />
+                </gradient>
+            </aapt:attr>
+        </path>
+    </group>
+</vector>

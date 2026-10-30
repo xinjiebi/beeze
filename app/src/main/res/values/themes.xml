@@ -1,0 +1,9 @@
+<resources>
+    <!-- 透明沉浸式状态栏，深色图标由代码控制 -->
+    <style name="Theme.Beeze" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+    </style>
+</resources>

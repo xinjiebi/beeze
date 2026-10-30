@@ -1,0 +1,11 @@
+<svg preserveAspectRatio="none" overflow="visible" style="display: block;" width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="player" clip-path="url(#clip0_38_1985)">
+<circle id="Ellipse 194" cx="24" cy="24" r="24" fill="#3A3A3C"/>
+<path id="Vector 14" d="M16.2857 31.4494V16.5506C16.2857 13.8412 19.2804 12.2023 21.5625 13.6628L34.3302 21.8342C35.9105 22.8456 35.9105 25.1544 34.3302 26.1658L21.5625 34.3372C19.2804 35.7977 16.2857 34.1588 16.2857 31.4494Z" fill="white"/>
+</g>
+<defs>
+<clipPath id="clip0_38_1985">
+<rect width="48" height="48" fill="white"/>
+</clipPath>
+</defs>
+</svg>

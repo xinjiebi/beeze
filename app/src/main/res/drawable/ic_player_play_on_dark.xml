@@ -1,0 +1,13 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp"
+    android:height="48dp"
+    android:viewportWidth="48"
+    android:viewportHeight="48">
+    <!-- 暗色背景上的播放按钮：白色圆底 + 深色三角 -->
+    <path
+        android:pathData="M24,0a24,24 0 1,0 0,48a24,24 0 1,0 0,-48z"
+        android:fillColor="#FFFFFF" />
+    <path
+        android:pathData="M16.2857,31.4494V16.5506C16.2857,13.8412 19.2804,12.2023 21.5625,13.6628L34.3302,21.8342C35.9105,22.8456 35.9105,25.1544 34.3302,26.1658L21.5625,34.3372C19.2804,35.7977 16.2857,34.1588 16.2857,31.4494Z"
+        android:fillColor="#3A3A3C" />
+</vector>
