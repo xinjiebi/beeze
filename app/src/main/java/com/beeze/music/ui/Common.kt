@@ -158,14 +158,15 @@ fun CoverImage(
     modifier: Modifier = Modifier,
     placeholder: (@Composable () -> Unit)? = null,
 ) {
+    // 占位分支同样应用外部 modifier（对齐/边距不能丢，否则调用方布局会错位）
     if (artwork == null) {
-        if (placeholder != null) placeholder() else CoverPlaceholder(size, shape)
+        Box(modifier) { if (placeholder != null) placeholder() else CoverPlaceholder(size, shape) }
         return
     }
     val context = LocalContext.current
     var failed = remember(artwork) { androidx.compose.runtime.mutableStateOf(false) }
     if (failed.value) {
-        if (placeholder != null) placeholder() else CoverPlaceholder(size, shape)
+        Box(modifier) { if (placeholder != null) placeholder() else CoverPlaceholder(size, shape) }
         return
     }
     // 占位图垫在图片下层：加载期间显示占位而不是白底，封面加载好后淡入盖住

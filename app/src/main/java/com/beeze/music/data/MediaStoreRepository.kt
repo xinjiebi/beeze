@@ -14,6 +14,13 @@ import java.text.Normalizer
 /** 通过 MediaStore 查询本机音频 */
 class MediaStoreRepository(private val context: Context) {
 
+    private val filterStore = LibraryFilterStore(context)
+    val filteredSongs: List<Song> get() = filterStore.songs
+
+    fun filterSongs(songs: List<Song>) = filterStore.add(songs)
+
+    fun restoreFilteredSong(song: Song) = filterStore.remove(song)
+
     companion object {
         // Han-Latin 转写需要 API 29+（ICU）
         private val hanLatin by lazy {
@@ -48,6 +55,7 @@ class MediaStoreRepository(private val context: Context) {
             MediaStore.Audio.Media.ALBUM_ID,
             MediaStore.Audio.Media.DURATION,
             MediaStore.Audio.Media.DATA,
+            MediaStore.Audio.Media.DATE_ADDED,
         )
         // 只取音乐文件，且过滤掉过短的铃声片段
         val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0"
@@ -70,9 +78,11 @@ class MediaStoreRepository(private val context: Context) {
                 val albumIdCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM_ID)
                 val durationCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
                 val dataCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA)
+                val dateAddedCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_ADDED)
                 while (cursor.moveToNext()) {
                     val id = cursor.getLong(idCol)
                     val path = cursor.getString(dataCol) ?: continue
+                    if (filterStore.contains(id, path)) continue
                     songs += Song(
                         id = id,
                         title = cursor.getString(titleCol) ?: "未知标题",
@@ -82,6 +92,7 @@ class MediaStoreRepository(private val context: Context) {
                         durationMs = cursor.getLong(durationCol),
                         contentUri = ContentUris.withAppendedId(collection, id),
                         path = path,
+                        dateAddedSeconds = cursor.getLong(dateAddedCol),
                     )
                 }
             }
@@ -150,10 +161,11 @@ class MediaStoreRepository(private val context: Context) {
                             MediaStore.Audio.Media.EXTERNAL_CONTENT_URI, id
                         ),
                         path = o.getString("path"),
+                        dateAddedSeconds = o.optLong("dateAddedSeconds"),
                     )
                 )
             }
-        }
+        }.filterNot { filterStore.contains(it.id, it.path) }
     }.getOrNull()
 
     suspend fun saveCachedSongs(songs: List<Song>) = withContext(Dispatchers.IO) {
@@ -169,6 +181,7 @@ class MediaStoreRepository(private val context: Context) {
                         put("albumId", s.albumId)
                         put("durationMs", s.durationMs)
                         put("path", s.path)
+                        put("dateAddedSeconds", s.dateAddedSeconds)
                     }
                 )
             }

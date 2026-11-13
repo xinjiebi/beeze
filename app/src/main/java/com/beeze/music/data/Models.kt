@@ -24,6 +24,7 @@ data class Song(
     val durationMs: Long,
     val contentUri: Uri,
     val path: String,
+    val dateAddedSeconds: Long = 0L,
 ) {
     val artwork: SongArtwork
         get() = SongArtwork(albumId, contentUri)
@@ -56,4 +57,25 @@ data class AlbumItem(
 data class ArtistItem(
     val name: String,
     val songs: List<Song>,
+)
+
+/** 搜索结果：歌名命中优先；歌词命中时携带首个匹配行用于副标题展示 */
+data class SongSearchResult(
+    val song: Song,
+    val lyricLine: String? = null,
+)
+
+/** 用户自建歌单 */
+data class Playlist(
+    val id: Long,
+    val name: String,
+    val songIds: List<Long>,
+)
+
+/** For you 各入口卡片的封面：列表里第一首确实有封面的歌（整列表都没封面则为 null） */
+data class ForYouCovers(
+    val lyric: Song? = null,
+    val liked: Song? = null,
+    val mostPlayed: Song? = null,
+    val shuffle: Song? = null,
 )

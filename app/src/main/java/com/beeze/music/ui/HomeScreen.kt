@@ -62,6 +62,9 @@ import com.beeze.music.data.ArtistItem
 import com.beeze.music.data.FolderItem
 import com.beeze.music.data.LyricsRepository
 import com.beeze.music.data.Song
+import com.beeze.music.data.SongSortOption
+import com.beeze.music.data.SongSortScope
+import com.beeze.music.data.sortedForDisplay
 import com.beeze.music.ui.theme.BeezeColors
 import com.beeze.music.ui.theme.BeezeType
 
@@ -77,6 +80,18 @@ fun HomeScreen(viewModel: PlayerViewModel) {
     val currentSong by viewModel.currentSong.collectAsStateWithLifecycle()
     val isPlaying by viewModel.isPlaying.collectAsStateWithLifecycle()
     val libraryLoaded by viewModel.libraryLoaded.collectAsStateWithLifecycle()
+    var selectingSongs by remember { mutableStateOf(false) }
+
+    if (selectingSongs) {
+        BatchSelectionScreen(
+            viewModel = viewModel,
+            songs = songs,
+            playlistId = null,
+            onCancel = { selectingSongs = false },
+            onDone = { selectingSongs = false },
+        )
+        return
+    }
 
     Box(
         Modifier
@@ -92,7 +107,7 @@ fun HomeScreen(viewModel: PlayerViewModel) {
         )
 
         Column(Modifier.fillMaxSize().statusBarsPadding()) {
-            HomeNavbar()
+            HomeNavbar(onSearch = viewModel::openSearch, onScan = viewModel::openScan)
             HomeTabBar(selectedTab, onSelect = viewModel::selectTab)
 
             // 内容区支持左右滑动切换标签；与 selectedTab 双向同步
@@ -114,8 +129,13 @@ fun HomeScreen(viewModel: PlayerViewModel) {
                 // 每页套橡皮筋拉伸：列表不足一屏无法滚动时，拖拽仍有拉伸回弹
                 Box(Modifier.fillMaxSize().pageStretch()) {
                     when (HomeTab.entries[page]) {
-                        HomeTab.ForYou -> ForYouContent()
-                        HomeTab.Songs -> SongsContent(viewModel, songs, currentSong, libraryLoaded)
+                        HomeTab.ForYou -> ForYouContent(
+                            viewModel = viewModel,
+                            isPageSettled = pagerState.settledPage == page,
+                        )
+                        HomeTab.Songs -> SongsContent(viewModel, songs, currentSong, libraryLoaded) {
+                            selectingSongs = true
+                        }
                         HomeTab.Folders -> FoldersContent(viewModel, folders, libraryLoaded)
                         HomeTab.Albums -> AlbumsContent(viewModel, albums, libraryLoaded)
                         HomeTab.Artists -> ArtistsContent(viewModel, artists, libraryLoaded)
@@ -140,9 +160,9 @@ fun HomeScreen(viewModel: PlayerViewModel) {
     }
 }
 
-/** Navbar：左侧 logo + Beeze 字标，右侧 search / setting（设置暂为歌词权限入口弹窗） */
+/** Navbar：左侧 logo + Beeze 字标，右侧搜索与设置入口 */
 @Composable
-private fun HomeNavbar() {
+private fun HomeNavbar(onSearch: () -> Unit, onScan: () -> Unit) {
     val context = LocalContext.current
     var showSettingsEntry by remember { mutableStateOf(false) }
     Row(
@@ -166,7 +186,7 @@ private fun HomeNavbar() {
             modifier = Modifier
                 .padding(4.dp)
                 .size(24.dp)
-                .iconClickable { showToast(context, "搜索（占位）") },
+                .iconClickable(onClick = onSearch),
         )
         Spacer(Modifier.width(8.dp))
         Image(
@@ -179,18 +199,31 @@ private fun HomeNavbar() {
         )
     }
 
-    // 设置入口（暂只提供歌词文件权限；后续扩展为完整设置页）
+    // 设置入口：歌词文件权限与扫描过滤管理
     if (showSettingsEntry) {
         AlertDialog(
             onDismissRequest = { showSettingsEntry = false },
             title = { Text("歌词文件访问", style = BeezeType.title, color = BeezeColors.Ink) },
             text = {
-                Text(
-                    if (LyricsRepository.canReadLyrics()) "已授权，可以读取歌曲同目录下的 .lrc 歌词文件。"
-                    else "显示歌词需要「所有文件访问」权限（.lrc 不是媒体文件，Android 需要单独授权）。",
-                    style = BeezeType.bodySm,
-                    color = BeezeColors.Body,
-                )
+                Column {
+                    Text(
+                        if (LyricsRepository.canReadLyrics()) "已授权，可以读取歌曲同目录下的 .lrc 歌词文件。"
+                        else "显示歌词需要「所有文件访问」权限（.lrc 不是媒体文件，Android 需要单独授权）。",
+                        style = BeezeType.bodySm,
+                        color = BeezeColors.Body,
+                    )
+                    Text(
+                        "Scan & filtered songs",
+                        style = BeezeType.button,
+                        color = BeezeColors.Primary,
+                        modifier = Modifier
+                            .padding(top = 16.dp)
+                            .clickable {
+                                showSettingsEntry = false
+                                onScan()
+                            },
+                    )
+                }
             },
             confirmButton = {
                 if (!LyricsRepository.canReadLyrics()) {
@@ -304,24 +337,24 @@ private fun HomeTabBar(selected: HomeTab, onSelect: (HomeTab) -> Unit) {
     }
 }
 
-/** For you 占位页 */
-@Composable
-private fun ForYouContent() {
-    StaticPage {
-        Image(
-            painter = painterResource(R.drawable.ic_note_ph),
-            contentDescription = null,
-            modifier = Modifier.size(64.dp),
-        )
-        Spacer(Modifier.height(12.dp))
-        Text("推荐内容敬请期待", style = BeezeType.bodyMd, color = BeezeColors.Muted)
-    }
-}
+/** For you 页：实现见 ForYouScreen.kt（快捷卡片 + 最近播放 + 歌单 + 每周统计） */
 
 /** Songs 标签：工具行 + 歌曲列表 */
 @Composable
-private fun SongsContent(viewModel: PlayerViewModel, songs: List<Song>, currentSong: Song?, libraryLoaded: Boolean) {
+private fun SongsContent(
+    viewModel: PlayerViewModel,
+    songs: List<Song>,
+    currentSong: Song?,
+    libraryLoaded: Boolean,
+    onMultiSelect: () -> Unit,
+) {
     val context = LocalContext.current
+    val sortOptions by viewModel.sortOptions.collectAsStateWithLifecycle()
+    val sortOption = sortOptions[SongSortScope.Songs] ?: SongSortOption.Default
+    val sortedSongs = remember(songs, sortOption) { songs.sortedForDisplay(sortOption) }
+    var showSortSheet by remember { mutableStateOf(false) }
+    var actionSong by remember { mutableStateOf<Song?>(null) }
+
     Column(Modifier.fillMaxSize()) {
         // 工具行（高 48，px 20）
         Row(
@@ -333,7 +366,7 @@ private fun SongsContent(viewModel: PlayerViewModel, songs: List<Song>, currentS
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.iconClickable { viewModel.playShuffled(songs) },
+                modifier = Modifier.iconClickable { viewModel.playShuffled(sortedSongs) },
             ) {
                 Image(
                     painter = painterResource(R.drawable.ic_shuffle),
@@ -342,7 +375,7 @@ private fun SongsContent(viewModel: PlayerViewModel, songs: List<Song>, currentS
                 )
                 Spacer(Modifier.width(4.dp))
                 Text(
-                    "Shuffle (${songs.size} songs)",
+                    "Shuffle (${sortedSongs.size} songs)",
                     style = BeezeType.bodyMd,
                     color = BeezeColors.Ink,
                 )
@@ -353,7 +386,7 @@ private fun SongsContent(viewModel: PlayerViewModel, songs: List<Song>, currentS
                 contentDescription = "多选",
                 modifier = Modifier
                     .size(24.dp)
-                    .iconClickable { showToast(context, "多选（占位）") },
+                    .iconClickable(onClick = onMultiSelect),
             )
             Spacer(Modifier.width(12.dp))
             Image(
@@ -361,11 +394,11 @@ private fun SongsContent(viewModel: PlayerViewModel, songs: List<Song>, currentS
                 contentDescription = "排序",
                 modifier = Modifier
                     .size(24.dp)
-                    .iconClickable { showToast(context, "排序（占位）") },
+                    .iconClickable { showSortSheet = true },
             )
         }
 
-        if (songs.isEmpty()) {
+        if (sortedSongs.isEmpty()) {
             if (libraryLoaded) {
                 // 空态也可被 pageStretch 拉伸（weight 占满剩余空间，内容垂直居中）
                 Column(
@@ -384,16 +417,23 @@ private fun SongsContent(viewModel: PlayerViewModel, songs: List<Song>, currentS
                 modifier = Modifier.weight(1f),
                 contentPadding = PaddingValues(bottom = 100.dp), // 给 MiniPlayer 留位
             ) {
-                itemsIndexed(songs, key = { _, s -> s.id }) { index, song ->
+                itemsIndexed(sortedSongs, key = { _, s -> s.id }) { index, song ->
                     SongRow(
                         song = song,
                         isPlayingRow = song.id == currentSong?.id,
-                        onClick = { viewModel.playSongs(songs, index) },
-                        onMore = { showToast(context, "更多：${song.title}") },
+                        onClick = { viewModel.playSongs(sortedSongs, index, openPlayer = true) },
+                        onMore = { actionSong = song },
                     )
                 }
             }
         }
+    }
+
+    if (showSortSheet) {
+        SortSheet(viewModel, SongSortScope.Songs, onDismiss = { showSortSheet = false })
+    }
+    actionSong?.let { song ->
+        SongActionsSheet(viewModel, song, onDismiss = { actionSong = null })
     }
 }
 

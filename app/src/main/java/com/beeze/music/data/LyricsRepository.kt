@@ -15,8 +15,8 @@ object LyricsRepository {
     fun canReadLyrics(): Boolean =
         Build.VERSION.SDK_INT < Build.VERSION_CODES.R || Environment.isExternalStorageManager()
 
-    /** 查找并读取歌词：优先「同名.lrc」，其次「同名-歌词.lrc」；过滤外语歌的中文翻译行 */
-    fun loadLrc(song: Song): String? {
+    /** 歌词候选文件：优先「同名.lrc」，其次「同名-歌词.lrc」 */
+    private fun lrcFile(song: Song): File? {
         if (!canReadLyrics()) return null
         val audio = File(song.path)
         val dir = audio.parentFile ?: return null
@@ -25,13 +25,31 @@ object LyricsRepository {
             File(dir, "$base.lrc"),
             File(dir, "$base-歌词.lrc"),
         )
-        return candidates.firstOrNull { it.isFile }?.let { file ->
-            runCatching { filterTranslation(file.readText(Charsets.UTF_8)) }.getOrNull()
-        }
+        return candidates.firstOrNull { it.isFile }
+    }
+
+    /** 该歌曲是否有配套歌词文件（For you 页 Lyric Sync 卡片用） */
+    fun hasLrc(song: Song): Boolean = lrcFile(song) != null
+
+    /** 查找并读取歌词；过滤外语歌的中文翻译行 */
+    fun loadLrc(song: Song): String? = lrcFile(song)?.let { file ->
+        runCatching { filterTranslation(file.readText(Charsets.UTF_8)) }.getOrNull()
+    }
+
+    /** 返回首行包含关键词的歌词正文，去除时间戳与逐字时间标签 */
+    fun findMatchingLine(song: Song, query: String): String? {
+        if (query.isBlank()) return null
+        return loadLrc(song)?.lineSequence()
+            ?.map { line ->
+                val text = lineRegex.find(line)?.groupValues?.get(2) ?: line
+                text.replace(enhancedTimestampRegex, "").trim()
+            }
+            ?.firstOrNull { it.contains(query, ignoreCase = true) }
     }
 
     /** 一行 LRC：时间戳前缀 + 正文（兼容增强 LRC 的逐字时间标签） */
     private val lineRegex = Regex("^((?:\\[[^\\]]+\\])+)(.*)$")
+    private val enhancedTimestampRegex = Regex("<[^>]+>")
 
     /** 是否含 CJK 表意文字（汉字，中日文共用） */
     private fun containsHan(text: String): Boolean =

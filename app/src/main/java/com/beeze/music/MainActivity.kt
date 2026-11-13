@@ -11,6 +11,9 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -34,6 +37,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -48,11 +53,13 @@ import coil.ImageLoader
 import com.beeze.music.data.SongArtworkFetcher
 import com.beeze.music.ui.HomeScreen
 import com.beeze.music.ui.DetailScreen
+import com.beeze.music.ui.LibraryScanScreen
 import com.beeze.music.ui.LyricThemes
 import com.beeze.music.ui.openAllFilesAccessSettings
 import com.folialyric.FoliaLyricView
 import com.beeze.music.ui.PlayerScreen
 import com.beeze.music.ui.QueueSheet
+import com.beeze.music.ui.SearchScreen
 import com.beeze.music.ui.theme.BeezeColors
 import com.beeze.music.ui.theme.BeezeTheme
 import com.beeze.music.ui.theme.BeezeType
@@ -91,13 +98,15 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-/** 根组合：按权限与界面状态切换 主页 / 播放器页 / 权限引导 */
+/** 根组合：按权限与界面状态切换主页、搜索、扫描管理、详情、播放器与权限引导 */
 @Composable
 fun BeezeApp(viewModel: PlayerViewModel) {
     val context = LocalContext.current
     val hasPermission by viewModel.hasPermission.collectAsStateWithLifecycle()
     val screen by viewModel.screen.collectAsStateWithLifecycle()
     val detailPage by viewModel.detail.collectAsStateWithLifecycle()
+    val searchOpen by viewModel.searchOpen.collectAsStateWithLifecycle()
+    val scanOpen by viewModel.scanOpen.collectAsStateWithLifecycle()
 
     // Folia 歌词背景层：全局一个实例（样式设置存在 localStorage）。
     // WebView 首次创建要加载 WebView Provider（主线程几百毫秒），同步创建会拖慢冷启动首帧，
@@ -137,6 +146,7 @@ fun BeezeApp(viewModel: PlayerViewModel) {
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
+                viewModel.onForeground()
                 val granted = if (needsAllFiles) {
                     Environment.isExternalStorageManager()
                 } else {
@@ -166,15 +176,21 @@ fun BeezeApp(viewModel: PlayerViewModel) {
                 }
             }
         )
-        screen == AppScreen.Player -> lyricView?.let {
+        detailPage != null -> DetailScreen(viewModel, detailPage!!)
+        scanOpen -> LibraryScanScreen(viewModel)
+        searchOpen -> SearchScreen(viewModel)
+        else -> HomeScreen(viewModel)
+    }
+
+    // 播放器覆盖层：从页面底部拉起，关闭时向底部缩小收回；下层主页保持原状态
+    lyricView?.let { view ->
+        PlayerOverlay(visible = screen == AppScreen.Player) {
             PlayerScreen(
                 viewModel = viewModel,
-                lyricView = it,
+                lyricView = view,
                 onBack = viewModel::closePlayer,
             )
         }
-        detailPage != null -> DetailScreen(viewModel, detailPage!!)
-        else -> HomeScreen(viewModel)
     }
 
     // 播放列表面板：全局弹层，MiniPlayer 与播放页的列表按钮都能拉起
@@ -182,6 +198,40 @@ fun BeezeApp(viewModel: PlayerViewModel) {
     if (queueOpen) {
         QueueSheet(viewModel)
     }
+}
+
+/**
+ * 播放器拉起/收回动画容器。
+ * progress：0 = 全屏展开，1 = 收起到屏幕外（不渲染）。
+ * 打开：从底部滑上；关闭：下滑的同时以底部为中心缩小。
+ */
+@Composable
+private fun PlayerOverlay(visible: Boolean, content: @Composable () -> Unit) {
+    val progress = remember { Animatable(1f) }
+    LaunchedEffect(visible) {
+        if (visible) {
+            progress.animateTo(0f, tween(400, easing = FastOutSlowInEasing))
+        } else {
+            progress.animateTo(1f, tween(300, easing = FastOutSlowInEasing))
+        }
+    }
+    val p = progress.value
+    if (!visible && p >= 1f) return
+    Box(
+        Modifier
+            .fillMaxSize()
+            .graphicsLayer {
+                translationY = p * size.height
+                if (!visible) {
+                    // 关闭时向页面底部缩小
+                    val scale = 1f - 0.25f * p
+                    scaleX = scale
+                    scaleY = scale
+                    transformOrigin = TransformOrigin(0.5f, 1f)
+                }
+            },
+        content = { content() },
+    )
 }
 
 /** 未授权时的引导 UI */

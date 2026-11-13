@@ -24,6 +24,14 @@ object BeezeColors {
 
 /** 设计稿字体 Tokens（Noto Sans SC 以系统默认字体族加字重代替） */
 object BeezeType {
+    /** 每周收听卡片的大数字：Bold 28sp（Figma display-lg） */
+    val displayLg = TextStyle(
+        fontFamily = FontFamily.Default,
+        fontWeight = FontWeight.Bold,
+        fontSize = 28.sp,
+        lineHeight = 36.sp,          // 行高 1.286
+        letterSpacing = (-0.3).sp,
+    )
     val displayMd = TextStyle(
         fontFamily = FontFamily.Default,
         fontWeight = FontWeight.Bold,

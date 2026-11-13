@@ -29,15 +29,21 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
@@ -55,6 +61,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlin.math.roundToInt
 import com.beeze.music.DetailPage
+import com.beeze.music.EntryKind
 import com.beeze.music.PlayerViewModel
 import com.beeze.music.R
 import com.beeze.music.data.AlbumItem
@@ -62,6 +69,9 @@ import com.beeze.music.data.ArtistItem
 import com.beeze.music.data.FolderItem
 import com.beeze.music.data.Song
 import com.beeze.music.data.SongArtwork
+import com.beeze.music.data.SongSortOption
+import com.beeze.music.data.SongSortScope
+import com.beeze.music.data.sortedForDisplay
 import com.beeze.music.ui.theme.BeezeColors
 import com.beeze.music.ui.theme.BeezeType
 
@@ -74,23 +84,45 @@ fun DetailScreen(viewModel: PlayerViewModel, detail: DetailPage) {
     BackHandler(onBack = viewModel::closeDetail)
     val currentSong by viewModel.currentSong.collectAsStateWithLifecycle()
     val isPlaying by viewModel.isPlaying.collectAsStateWithLifecycle()
+    var selectionSongs by remember(detail) { mutableStateOf<List<Song>?>(null) }
+
+    val selectedList = selectionSongs
+    if (selectedList != null) {
+        BatchSelectionScreen(
+            viewModel = viewModel,
+            songs = selectedList,
+            playlistId = (detail as? DetailPage.SongList)?.playlistId,
+            onCancel = { selectionSongs = null },
+            onDone = { ordered ->
+                (detail as? DetailPage.SongList)?.playlistId?.let { playlistId ->
+                    viewModel.reorderPlaylist(playlistId, ordered.map { it.id })
+                }
+                selectionSongs = null
+            },
+        )
+        return
+    }
 
     Box(
         Modifier
             .fillMaxSize()
             .background(BeezeColors.SurfaceSoft)
     ) {
-        // 顶部紫色渐变（与主页一致，约 360dp）
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(360.dp)
-                .topPurpleGradient()
-        )
+        // 顶部紫色渐变（与主页一致，约 360dp）；For you 入口详情页用自己的主题色渐变
+        if (detail !is DetailPage.EntryList) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .height(360.dp)
+                    .topPurpleGradient()
+            )
+        }
         when (detail) {
-            is DetailPage.Folder -> FolderDetail(viewModel, detail.folder, currentSong)
-            is DetailPage.Album -> AlbumDetail(viewModel, detail.album, currentSong)
-            is DetailPage.Artist -> ArtistDetail(viewModel, detail.artist, currentSong)
+            is DetailPage.Folder -> FolderDetail(viewModel, detail.folder, currentSong) { selectionSongs = it }
+            is DetailPage.Album -> AlbumDetail(viewModel, detail.album, currentSong) { selectionSongs = it }
+            is DetailPage.Artist -> ArtistDetail(viewModel, detail.artist, currentSong) { selectionSongs = it }
+            is DetailPage.SongList -> SongListDetail(viewModel, detail, currentSong) { selectionSongs = it }
+            is DetailPage.EntryList -> EntryDetail(viewModel, detail, currentSong) { selectionSongs = it }
         }
         currentSong?.let { song ->
             MiniPlayer(
@@ -109,25 +141,149 @@ fun DetailScreen(viewModel: PlayerViewModel, detail: DetailPage) {
 
 /** 文件夹详情（Figma 80:4110）：顶栏带文件夹名，无头部，工具行 + 按钮 + 歌曲列表 */
 @Composable
-private fun FolderDetail(viewModel: PlayerViewModel, folder: FolderItem, currentSong: Song?) {
+private fun FolderDetail(viewModel: PlayerViewModel, folder: FolderItem, currentSong: Song?, onMultiSelect: (List<Song>) -> Unit) {
     DetailBody(
         viewModel = viewModel,
         title = folder.name,
         titleAlwaysVisible = true,
         songs = folder.songs,
         currentSong = currentSong,
+        onMultiSelect = onMultiSelect,
+        sortScope = SongSortScope.Folder,
     )
+}
+
+/** 动态歌曲列表详情（For you 各卡片 / 歌单）：按 id 列表从媒体库实时解析，数据变化随之刷新 */
+@Composable
+private fun SongListDetail(viewModel: PlayerViewModel, page: DetailPage.SongList, currentSong: Song?, onMultiSelect: (List<Song>) -> Unit) {
+    val allSongs by viewModel.songs.collectAsStateWithLifecycle()
+    val playlists by viewModel.playlists.collectAsStateWithLifecycle()
+    val songIds = remember(playlists, page) {
+        page.playlistId?.let { id -> playlists.firstOrNull { it.id == id }?.songIds } ?: page.songIds
+    }
+    val songs = remember(allSongs, songIds) {
+        val byId = allSongs.associateBy { it.id }
+        songIds.mapNotNull { byId[it] }
+    }
+    DetailBody(
+        viewModel = viewModel,
+        title = page.title,
+        titleAlwaysVisible = true,
+        songs = songs,
+        currentSong = currentSong,
+        onMultiSelect = onMultiSelect,
+        sortScope = if (page.playlistId == null && page.sortable) SongSortScope.Generic else null,
+        playlistId = page.playlistId,
+    )
+}
+
+/** For you 入口详情（Figma 167:6387 / 168:6795 / 168:7211）：
+ *  主题色渐变背景 + 大封面头部 + 标题/副标题；上滑头部收起、渐变淡出，顶栏标题淡入 */
+@Composable
+private fun EntryDetail(viewModel: PlayerViewModel, page: DetailPage.EntryList, currentSong: Song?, onMultiSelect: (List<Song>) -> Unit) {
+    val allSongs by viewModel.songs.collectAsStateWithLifecycle()
+    val covers by viewModel.cardCovers.collectAsStateWithLifecycle()
+    val songs = remember(allSongs, page.songIds) {
+        val byId = allSongs.associateBy { it.id }
+        page.songIds.mapNotNull { byId[it] }
+    }
+    val cover = when (page.kind) {
+        EntryKind.LyricSync -> covers.lyric
+        EntryKind.Liked -> covers.liked
+        EntryKind.MostPlayed -> covers.mostPlayed
+    }
+    var collapseFraction by remember { mutableFloatStateOf(0f) }
+    Box(Modifier.fillMaxSize()) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(360.dp)
+                .graphicsLayer { alpha = 1f - collapseFraction }
+                .entryGradient(page.kind)
+        )
+        DetailBody(
+            viewModel = viewModel,
+            title = page.kind.title,
+            titleAlwaysVisible = false,
+            songs = songs,
+            currentSong = currentSong,
+            onMultiSelect = onMultiSelect,
+            sortScope = if (page.kind == EntryKind.MostPlayed) null else SongSortScope.Entry,
+            // 头部高度：132 封面 + 8 + 28 标题 + 2 + 52 副标题（两行）
+            headerHeight = 222.dp,
+            header = { EntryHeader(page.kind, cover) },
+            onCollapseFractionChanged = { collapseFraction = it },
+        )
+    }
+}
+
+/** 入口详情的主题色顶部渐变（170.5deg：主色 5.65% → 辅色 33.98% → 透明 72.9%） */
+private fun Modifier.entryGradient(kind: EntryKind): Modifier = drawBehind {
+    val stops: Array<Pair<Float, Color>> = when (kind) {
+        EntryKind.LyricSync -> arrayOf(
+            0.0565f to Color(0xFF07BA99).copy(alpha = 0.8f),
+            0.3398f to Color(0xFF963EF7).copy(alpha = 0.5f),
+            0.7293f to Color(0xFF963EF7).copy(alpha = 0f),
+        )
+        EntryKind.Liked -> arrayOf(
+            0.0565f to Color(0xFFD325A8),
+            0.3398f to Color(0xFFEFBF43).copy(alpha = 0.2f),
+            0.7293f to Color(0xFFEFBF43).copy(alpha = 0f),
+        )
+        EntryKind.MostPlayed -> arrayOf(
+            0.0565f to Color(0xFF18B022).copy(alpha = 0.8f),
+            0.3398f to Color(0xFF1BA8EB).copy(alpha = 0.5f),
+            0.7293f to Color(0xFF1BA8EB).copy(alpha = 0f),
+        )
+    }
+    val brush = Brush.linearGradient(
+        *stops,
+        start = Offset(size.width * 0.45f, 0f),
+        end = Offset(size.width * 0.6f, size.height),
+    )
+    drawRect(brush)
+}
+
+/** 入口详情头部：居中 132 封面（圆角 14 + 黑胶盘）+ 标题 + 两行副标题 */
+@Composable
+private fun EntryHeader(kind: EntryKind, cover: Song?) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        CoverWithDisc(cover?.artwork, 132.dp, cornerRadius = 14.dp)
+        Spacer(Modifier.height(8.dp))
+        Text(
+            kind.title,
+            style = BeezeType.title,
+            color = BeezeColors.Body,
+            textAlign = TextAlign.Center,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(horizontal = 24.dp),
+        )
+        Spacer(Modifier.height(2.dp))
+        Text(
+            kind.subtitle,
+            style = BeezeType.bodyMd,
+            color = BeezeColors.Muted,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(horizontal = 24.dp),
+        )
+    }
 }
 
 /** 专辑详情（Figma 82:4547 / 82:4923）：大封面头部随滚动收起，顶栏标题淡入，工具行置顶 */
 @Composable
-private fun AlbumDetail(viewModel: PlayerViewModel, album: AlbumItem, currentSong: Song?) {
+private fun AlbumDetail(viewModel: PlayerViewModel, album: AlbumItem, currentSong: Song?, onMultiSelect: (List<Song>) -> Unit) {
     DetailBody(
         viewModel = viewModel,
         title = album.name,
         titleAlwaysVisible = false,
         songs = album.songs,
         currentSong = currentSong,
+        onMultiSelect = onMultiSelect,
+        sortScope = SongSortScope.Album,
         // 头部高度：132 封面 + 8 + 28 名称 + 2 + 26 艺术家
         headerHeight = 196.dp,
         header = { AlbumHeader(album) },
@@ -136,7 +292,7 @@ private fun AlbumDetail(viewModel: PlayerViewModel, album: AlbumItem, currentSon
 
 /** 艺术家详情（Figma 82:5103）：顶栏带艺术家名，头部为横向专辑卡片，可点进专辑详情 */
 @Composable
-private fun ArtistDetail(viewModel: PlayerViewModel, artist: ArtistItem, currentSong: Song?) {
+private fun ArtistDetail(viewModel: PlayerViewModel, artist: ArtistItem, currentSong: Song?, onMultiSelect: (List<Song>) -> Unit) {
     val albums by viewModel.albums.collectAsStateWithLifecycle()
     val artistAlbums = remember(albums, artist.name) {
         albums.filter { it.artist == artist.name }
@@ -147,6 +303,8 @@ private fun ArtistDetail(viewModel: PlayerViewModel, artist: ArtistItem, current
         titleAlwaysVisible = true,
         songs = artist.songs,
         currentSong = currentSong,
+        onMultiSelect = onMultiSelect,
+        sortScope = SongSortScope.Artist,
         // 头部高度：46 标签行 + 143 卡片（99 封面 + 4 + 22 名称 + 18 歌曲数）+ 12 间距
         headerHeight = 201.dp,
         header = {
@@ -173,13 +331,26 @@ private fun DetailBody(
     currentSong: Song?,
     headerHeight: Dp = 0.dp,
     header: (@Composable () -> Unit)? = null,
+    onMultiSelect: (List<Song>) -> Unit = {},
+    sortScope: SongSortScope? = null,
+    playlistId: Long? = null,
+    onCollapseFractionChanged: (Float) -> Unit = {},
 ) {
     val context = LocalContext.current
+    val sortOptions by viewModel.sortOptions.collectAsStateWithLifecycle()
+    val sortOption = sortScope?.let { sortOptions[it] } ?: SongSortOption.Default
+    val displayedSongs = remember(songs, sortOption) { songs.sortedForDisplay(sortOption) }
+    var showSortSheet by remember { mutableStateOf(false) }
+    var actionSong by remember { mutableStateOf<Song?>(null) }
     val density = LocalDensity.current
     val listState = rememberLazyListState()
     val headerHPx = with(density) { headerHeight.roundToPx() }
     // 头部收起进度：独立状态，由嵌套滚动驱动（不依赖列表 offset，避免与列表滚动互相钳制）
     var collapsePx by remember { mutableIntStateOf(0) }
+    // 把收起比例同步给外层（入口详情的主题渐变随之淡出）
+    LaunchedEffect(collapsePx, headerHPx) {
+        onCollapseFractionChanged(if (headerHPx > 0) collapsePx / headerHPx.toFloat() else 0f)
+    }
     // 向上滑先收头部，收完列表才滚动；列表到顶后继续下滑则展开头部。
     // 这样即使歌曲很少（内容不足一屏），也能收起头部、歌曲置顶
     val nestedScrollConnection = remember(headerHPx) {
@@ -232,10 +403,14 @@ private fun DetailBody(
                         }
                     }
                 }
-                DetailToolbar(songs.size)
+                DetailToolbar(
+                    songCount = displayedSongs.size,
+                    onMultiSelect = { onMultiSelect(displayedSongs) },
+                    onSort = sortScope?.let { { showSortSheet = true } },
+                )
                 DetailActionButtons(
-                    onShuffle = { viewModel.playShuffled(songs) },
-                    onPlayAll = { viewModel.playSongs(songs, 0) },
+                    onShuffle = { viewModel.playShuffled(displayedSongs) },
+                    onPlayAll = { viewModel.playSongs(displayedSongs, 0) },
                 )
                 LazyColumn(
                     state = listState,
@@ -245,17 +420,24 @@ private fun DetailBody(
                         .nestedScroll(nestedScrollConnection),
                     contentPadding = PaddingValues(bottom = 100.dp), // 给 MiniPlayer 留位
                 ) {
-                    itemsIndexed(songs, key = { _, s -> s.id }) { index, song ->
+                    itemsIndexed(displayedSongs, key = { _, s -> s.id }) { index, song ->
                         SongRow(
                             song = song,
                             isPlayingRow = song.id == currentSong?.id,
-                            onClick = { viewModel.playSongs(songs, index) },
-                            onMore = { showToast(context, "更多：${song.title}") },
+                            onClick = { viewModel.playSongs(displayedSongs, index, openPlayer = true) },
+                            onMore = { actionSong = song },
                         )
                     }
                 }
             }
         }
+    }
+
+    if (showSortSheet && sortScope != null) {
+        SortSheet(viewModel, sortScope, onDismiss = { showSortSheet = false })
+    }
+    actionSong?.let { song ->
+        SongActionsSheet(viewModel, song, playlistId = playlistId, onDismiss = { actionSong = null })
     }
 }
 
@@ -291,7 +473,7 @@ private fun DetailTopBar(title: String, titleAlpha: Float, onBack: () -> Unit) {
 
 /** 「N songs」+ 多选/排序图标行（Figma Frame 44，高 48，px 20，图标间距 16） */
 @Composable
-private fun DetailToolbar(songCount: Int) {
+private fun DetailToolbar(songCount: Int, onMultiSelect: () -> Unit, onSort: (() -> Unit)?) {
     val context = LocalContext.current
     Row(
         modifier = Modifier
@@ -311,16 +493,18 @@ private fun DetailToolbar(songCount: Int) {
             contentDescription = "多选",
             modifier = Modifier
                 .size(24.dp)
-                .iconClickable { showToast(context, "多选（占位）") },
+                .iconClickable(onClick = onMultiSelect),
         )
-        Spacer(Modifier.width(16.dp))
-        Image(
-            painter = painterResource(R.drawable.ic_sort),
-            contentDescription = "排序",
-            modifier = Modifier
-                .size(24.dp)
-                .iconClickable { showToast(context, "排序（占位）") },
-        )
+        if (onSort != null) {
+            Spacer(Modifier.width(16.dp))
+            Image(
+                painter = painterResource(R.drawable.ic_sort),
+                contentDescription = "排序",
+                modifier = Modifier
+                    .size(24.dp)
+                    .iconClickable(onClick = onSort),
+            )
+        }
     }
 }
 
@@ -383,8 +567,8 @@ private fun DetailActionButton(
  * 比例取自 Figma Frame 20：盘直径 = 0.864 × 封面边长，整体宽 = 1.091 × 封面边长。
  */
 @Composable
-private fun CoverWithDisc(artwork: SongArtwork?, coverSize: Dp) {
-    val coverShape = RoundedCornerShape(8.dp)
+private fun CoverWithDisc(artwork: SongArtwork?, coverSize: Dp, cornerRadius: Dp = 8.dp) {
+    val coverShape = RoundedCornerShape(cornerRadius)
     Box(Modifier.size(width = coverSize * 1.091f, height = coverSize)) {
         // 黑胶盘：右侧露出
         Box(

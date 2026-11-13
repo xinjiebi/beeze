@@ -83,7 +83,35 @@ class SongArtworkFetcher(
             SongArtworkFetcher(context, data)
     }
 
-    private companion object {
-        const val TARGET_SIZE = 512
+    companion object {
+        private const val TARGET_SIZE = 512
+
+        /**
+         * 该歌曲是否确实有封面（封面表或文件内嵌）。
+         * IO 操作，用于 For you 卡片「第一首没封面就依次往后取」；与 fetch 的两步兜底同序。
+         */
+        fun hasArtwork(context: Context, artwork: SongArtwork): Boolean {
+            if (artwork.albumId > 0) {
+                val found = try {
+                    val uri = ContentUris.withAppendedId(ALBUM_ART_BASE_URI, artwork.albumId)
+                    context.contentResolver.openInputStream(uri)?.use { it.read() != -1 } == true
+                } catch (e: Exception) {
+                    false
+                }
+                if (found) return true
+            }
+            val retriever = MediaMetadataRetriever()
+            return try {
+                retriever.setDataSource(context, artwork.contentUri)
+                retriever.embeddedPicture != null
+            } catch (e: Exception) {
+                false
+            } finally {
+                try {
+                    retriever.release()
+                } catch (_: Exception) {
+                }
+            }
+        }
     }
 }

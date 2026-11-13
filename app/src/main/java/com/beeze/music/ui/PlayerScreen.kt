@@ -92,6 +92,7 @@ fun PlayerScreen(viewModel: PlayerViewModel, lyricView: FoliaLyricView, onBack: 
 
     var lyricEffectsOpen by remember { mutableStateOf(false) }
     var sleepTimerOpen by remember { mutableStateOf(false) }
+    var addPlaylistOpen by remember { mutableStateOf(false) }
     val sleepTimerRemainingMs by viewModel.sleepTimerRemainingMs.collectAsStateWithLifecycle()
 
     // null = 歌词加载中，true = 有歌词（隐藏封面），false = 无歌词（显示封面）
@@ -296,7 +297,7 @@ fun PlayerScreen(viewModel: PlayerViewModel, lyricView: FoliaLyricView, onBack: 
                 } else {
                     PlayerActionIcon(R.drawable.ic_timer, "定时") { sleepTimerOpen = true }
                 }
-                PlayerActionIcon(R.drawable.ic_add_playlist, "添加到歌单") { showToast(context, "添加到歌单（占位）") }
+                PlayerActionIcon(R.drawable.ic_add_playlist, "添加到歌单") { addPlaylistOpen = true }
                 PlayerActionIcon(R.drawable.ic_lyrics, "歌词") { lyricEffectsOpen = true }
                 PlayerActionIcon(R.drawable.ic_player_more, "更多") { showToast(context, "更多（占位）") }
             }
@@ -387,6 +388,13 @@ fun PlayerScreen(viewModel: PlayerViewModel, lyricView: FoliaLyricView, onBack: 
         }
         if (sleepTimerOpen) {
             SleepTimerSheet(viewModel = viewModel, onDismiss = { sleepTimerOpen = false })
+        }
+        if (addPlaylistOpen) {
+            AddToPlaylistSheet(
+                viewModel = viewModel,
+                song = song,
+                onDismiss = { addPlaylistOpen = false },
+            )
         }
     }
 }
