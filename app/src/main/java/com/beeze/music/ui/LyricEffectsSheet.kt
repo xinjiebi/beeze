@@ -31,12 +31,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.beeze.music.ui.theme.BeezeColors
 import com.beeze.music.ui.theme.BeezeType
-import com.folialyric.FoliaLyricView
+import com.syncedlyrics.sdk.SyncedLyricsView
 
 /** 与播放列表共用白色底部弹层、圆角、拖拽把手和 75% 高度。 */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LyricEffectsSheet(lyricView: FoliaLyricView, onDismiss: () -> Unit) {
+fun LyricEffectsSheet(lyricView: SyncedLyricsView, onDismiss: () -> Unit) {
     val context = LocalContext.current
     var selectedLyric by remember { mutableStateOf(LyricThemes.current(context)) }
     var selectedBackground by remember { mutableStateOf(LyricThemes.currentBackground(context)) }
@@ -71,7 +71,7 @@ fun LyricEffectsSheet(lyricView: FoliaLyricView, onDismiss: () -> Unit) {
                     onSelect = { mode ->
                         selectedLyric = mode
                         LyricThemes.select(context, mode)
-                        lyricView.setVisualizerMode(mode)
+                        lyricView.lyricStyle = mode
                     },
                 )
                 Spacer(Modifier.height(28.dp))
@@ -83,7 +83,7 @@ fun LyricEffectsSheet(lyricView: FoliaLyricView, onDismiss: () -> Unit) {
                     onSelect = { mode ->
                         selectedBackground = mode
                         LyricThemes.selectBackground(context, mode)
-                        lyricView.setBackground(mode)
+                        lyricView.backgroundStyle = mode
                     },
                 )
                 Spacer(Modifier.height(24.dp))
@@ -93,7 +93,7 @@ fun LyricEffectsSheet(lyricView: FoliaLyricView, onDismiss: () -> Unit) {
 }
 
 @Composable
-private fun EffectGrid(options: List<String>, selected: String, onSelect: (String) -> Unit) {
+private fun <T> EffectGrid(options: List<T>, selected: T, onSelect: (T) -> Unit) where T : Enum<T> {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         options.chunked(3).forEach { row ->
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -107,7 +107,7 @@ private fun EffectGrid(options: List<String>, selected: String, onSelect: (Strin
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
-                            option.replaceFirstChar { it.uppercase() },
+                            option.name.lowercase().replaceFirstChar { it.uppercase() },
                             style = BeezeType.bodySm.copy(fontWeight = if (isSelected) FontWeight.Medium else FontWeight.Normal),
                             color = if (isSelected) BeezeColors.Primary else BeezeColors.Body,
                         )

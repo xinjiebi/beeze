@@ -53,6 +53,6 @@ dependencies {
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.session)
     implementation(libs.coil.compose)
-    implementation(project(":folialyric"))
+    implementation(project(":syncedlyrics"))
     debugImplementation(libs.compose.ui.tooling)
 }

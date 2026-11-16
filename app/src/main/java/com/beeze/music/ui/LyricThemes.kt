@@ -1,19 +1,17 @@
 package com.beeze.music.ui
 
 import android.content.Context
+import com.syncedlyrics.sdk.BackgroundStyle
+import com.syncedlyrics.sdk.LyricStyle
 
-/** Folia 外观选择。宿主保存当前选项，以便面板展示并在 WebView 创建后恢复。 */
+/** SyncedLyrics 外观选择。宿主持久化选项，并在 View 创建后恢复。 */
 object LyricThemes {
-    val modes = listOf(
-        "classic", "cadenza", "partita", "fume", "claddagh", "cappella", "tilt",
-        "diorama", "monet", "pendolo", "sonnet", "tempera", "lumiere", "still",
-    )
+    val modes = LyricStyle.entries
+    val backgrounds = BackgroundStyle.entries
     private const val PREFS = "beeze"
-    // v2：默认主题从 classic 改为 pendolo（v1 存的 classic 默认值不视为用户主动选择）
-    private const val KEY = "lyric_theme_index_v2"
-    private const val BACKGROUND_KEY = "lyric_background_v1"
-    private val DEFAULT_INDEX = modes.indexOf("pendolo")
-    val backgrounds = listOf("common", "latent", "monet", "nomand", "sora")
+    private const val KEY = "synced_lyric_style_v1"
+    private const val BACKGROUND_KEY = "synced_lyric_background_v1"
+    private val DEFAULT_INDEX = modes.indexOf(LyricStyle.PENDOLO)
 
     private fun index(context: Context): Int {
         val stored = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -21,24 +19,21 @@ object LyricThemes {
         return stored.coerceIn(modes.indices)
     }
 
-    /** 当前样式（默认 pendolo） */
-    fun current(context: Context): String = modes[index(context)]
+    fun current(context: Context): LyricStyle = modes[index(context)]
 
-    fun select(context: Context, mode: String) {
-        val selected = modes.indexOf(mode)
-        if (selected < 0) return
+    fun select(context: Context, mode: LyricStyle) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .edit().putInt(KEY, selected).apply()
+            .edit().putInt(KEY, modes.indexOf(mode)).apply()
     }
 
-    fun currentBackground(context: Context): String =
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .getString(BACKGROUND_KEY, "monet")
-            ?.takeIf { it in backgrounds } ?: "monet"
+    fun currentBackground(context: Context): BackgroundStyle {
+        val stored = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .getInt(BACKGROUND_KEY, backgrounds.indexOf(BackgroundStyle.LIQUID))
+        return backgrounds[stored.coerceIn(backgrounds.indices)]
+    }
 
-    fun selectBackground(context: Context, mode: String) {
-        if (mode !in backgrounds) return
+    fun selectBackground(context: Context, mode: BackgroundStyle) {
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            .edit().putString(BACKGROUND_KEY, mode).apply()
+            .edit().putInt(BACKGROUND_KEY, backgrounds.indexOf(mode)).apply()
     }
 }

@@ -32,9 +32,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.TransformOrigin
@@ -56,14 +54,13 @@ import com.beeze.music.ui.DetailScreen
 import com.beeze.music.ui.LibraryScanScreen
 import com.beeze.music.ui.LyricThemes
 import com.beeze.music.ui.openAllFilesAccessSettings
-import com.folialyric.FoliaLyricView
 import com.beeze.music.ui.PlayerScreen
 import com.beeze.music.ui.QueueSheet
 import com.beeze.music.ui.SearchScreen
 import com.beeze.music.ui.theme.BeezeColors
 import com.beeze.music.ui.theme.BeezeTheme
 import com.beeze.music.ui.theme.BeezeType
-import kotlinx.coroutines.delay
+import com.syncedlyrics.sdk.SyncedLyricsView
 
 class MainActivity : ComponentActivity() {
 
@@ -108,24 +105,13 @@ fun BeezeApp(viewModel: PlayerViewModel) {
     val searchOpen by viewModel.searchOpen.collectAsStateWithLifecycle()
     val scanOpen by viewModel.scanOpen.collectAsStateWithLifecycle()
 
-    // Folia 歌词背景层：全局一个实例（样式设置存在 localStorage）。
-    // WebView 首次创建要加载 WebView Provider（主线程几百毫秒），同步创建会拖慢冷启动首帧，
-    // 所以等首帧上屏后再创建；只有进入播放页才会用到它，那时早已就绪
-    var lyricView by remember { mutableStateOf<FoliaLyricView?>(null) }
-    LaunchedEffect(Unit) {
-        delay(500) // 让首页首帧先渲染
-        val view = FoliaLyricView(context.applicationContext).apply { touchThrough = true }
-        // JS 桥就绪后隐藏 SDK 内置控制条（控制统一走 Beeze UI），并应用持久化的歌词样式
-        view.setControlsVisible(false)
-        view.setVisualizerMode(LyricThemes.current(context))
-        // 背景用 monet（封面模糊派生）：默认的 latent 带半调点阵层，封面偏灰时显得脏
-        view.setBackground(LyricThemes.currentBackground(context))
-        lyricView = view
-    }
-    DisposableEffect(lyricView) {
-        // 显式捕获当前值：委托属性的闭包会读到「最新值」，key 变化时会把新 view 误 release
-        val view = lyricView
-        onDispose { view?.release() }
+    // 原生歌词 View 全局复用；无歌词封面仍由 Beeze 现有布局绘制。
+    val lyricView = remember {
+        SyncedLyricsView(context.applicationContext).apply {
+            lyricStyle = LyricThemes.current(context)
+            backgroundStyle = LyricThemes.currentBackground(context)
+            emptyLyricsCoverEnabled = false
+        }
     }
 
     // 授权策略：API 30+ 直接引导开启「所有文件访问」——一个权限同时覆盖音频扫描与
@@ -183,14 +169,12 @@ fun BeezeApp(viewModel: PlayerViewModel) {
     }
 
     // 播放器覆盖层：从页面底部拉起，关闭时向底部缩小收回；下层主页保持原状态
-    lyricView?.let { view ->
-        PlayerOverlay(visible = screen == AppScreen.Player) {
-            PlayerScreen(
-                viewModel = viewModel,
-                lyricView = view,
-                onBack = viewModel::closePlayer,
-            )
-        }
+    PlayerOverlay(visible = screen == AppScreen.Player) {
+        PlayerScreen(
+            viewModel = viewModel,
+            lyricView = lyricView,
+            onBack = viewModel::closePlayer,
+        )
     }
 
     // 播放列表面板：全局弹层，MiniPlayer 与播放页的列表按钮都能拉起

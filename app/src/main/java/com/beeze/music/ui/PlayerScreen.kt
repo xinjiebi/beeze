@@ -1,6 +1,6 @@
 package com.beeze.music.ui
 
-import android.os.SystemClock
+import android.graphics.drawable.BitmapDrawable
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Image
@@ -47,18 +47,19 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil.Coil
+import coil.request.ImageRequest
+import coil.request.SuccessResult
 import com.beeze.music.PlayMode
 import com.beeze.music.PlayerViewModel
 import com.beeze.music.R
 import com.beeze.music.data.LyricsRepository
 import com.beeze.music.ui.theme.BeezeColors
 import com.beeze.music.ui.theme.BeezeType
-import com.folialyric.FoliaLyricListener
-import com.folialyric.FoliaLyricView
+import com.syncedlyrics.sdk.SyncedLyricsView
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
-import kotlin.math.abs
 
 /** 播放页暗色模式配色（歌词背景偏暗，不走 light 模式） */
 private val OnDark = Color(0xFFFFFFFF)           // 主文字/图标
@@ -68,11 +69,11 @@ private val OnDarkTrack = Color(0x40FFFFFF)      // 进度轨道 25%
 private val OnDarkAccent = Color(0xFFC98AFF)     // 暗底上的强调紫（比 primary 浅）
 
 /**
- * 播放器页：Folia 歌词动画作全屏背景层，Beeze 的封面/标题/进度条/控制叠加在上。
+ * 播放器页：SyncedLyrics 歌词动画作全屏背景层，Beeze 的封面/标题/进度条/控制叠加在上。
  * 整体暗色模式；有歌词时隐藏封面圆盘，让歌词动画占满视觉中心。
  */
 @Composable
-fun PlayerScreen(viewModel: PlayerViewModel, lyricView: FoliaLyricView, onBack: () -> Unit) {
+fun PlayerScreen(viewModel: PlayerViewModel, lyricView: SyncedLyricsView, onBack: () -> Unit) {
     BackHandler(onBack = onBack)
 
     val currentSong by viewModel.currentSong.collectAsStateWithLifecycle()
@@ -98,44 +99,31 @@ fun PlayerScreen(viewModel: PlayerViewModel, lyricView: FoliaLyricView, onBack: 
     // null = 歌词加载中，true = 有歌词（隐藏封面），false = 无歌词（显示封面）
     var hasLyrics by remember { mutableStateOf<Boolean?>(null) }
 
-    // ===== 歌词背景层与播放状态同步 =====
-    // SDK 不在 WebView 里出声（避免抢占音频焦点导致 ExoPlayer 被系统暂停，也省去双份解码）：
-    // 只 loadSong 加载歌词与元数据，然后由 ExoPlayer 的进度外推时钟以约 7Hz seek 驱动歌词动画
     LaunchedEffect(song.id) {
         hasLyrics = null
+        lyricView.setLrc("")
+        lyricView.setCover(null)
         val lrc = withContext(Dispatchers.IO) { LyricsRepository.loadLrc(song) }
         hasLyrics = !lrc.isNullOrBlank()
-        lyricView.loadSong(song.contentUri, song.title, song.artist, lrc)
-        lyricView.pause() // 防止 SDK 侧自动播放
-        lyricView.seekTo(viewModel.positionMs.value / 1000.0)
+        lyricView.setLrc(lrc.orEmpty())
+        lyricView.setPlaybackState(viewModel.positionMs.value, isPlaying)
+
+        val request = ImageRequest.Builder(context)
+            .data(song.artwork)
+            .allowHardware(false)
+            .build()
+        val result = Coil.imageLoader(context).execute(request)
+        val cover = ((result as? SuccessResult)?.drawable as? BitmapDrawable)?.bitmap
+        lyricView.setCover(cover)
     }
-    // 播放中用外推时钟驱动歌词：以 ViewModel 进度为基线按本机时钟外推，偏差大时重新对齐
+
+    // SDK 在两次校准之间自行推算进度；播放中每 500ms 同步一次 ExoPlayer 的真实位置。
     LaunchedEffect(isPlaying, song.id) {
-        if (!isPlaying) return@LaunchedEffect
-        // 切歌后 WebView 的 <audio> 还在拉取元数据（duration 未就绪前 seek 会被丢弃），
-        // 先给它一点时间，再开始 150ms 的 seek 驱动
-        delay(800)
-        var baseMs = viewModel.positionMs.value
-        var baseTime = SystemClock.elapsedRealtime()
-        while (true) {
-            val estimated = baseMs + (SystemClock.elapsedRealtime() - baseTime)
-            lyricView.seekTo(estimated / 1000.0)
-            delay(150)
-            val actual = viewModel.positionMs.value
-            if (abs(actual - estimated) > 400) {
-                baseMs = actual
-                baseTime = SystemClock.elapsedRealtime()
-            }
+        lyricView.setPlaybackState(viewModel.positionMs.value, isPlaying)
+        while (isPlaying) {
+            delay(500)
+            lyricView.setPlaybackState(viewModel.positionMs.value, true)
         }
-    }
-    // SDK 侧错误只记日志，不影响 Beeze 自身播放
-    DisposableEffect(lyricView) {
-        lyricView.listener = object : FoliaLyricListener {
-            override fun onError(message: String) {
-                android.util.Log.w("Beeze", "歌词层错误: $message")
-            }
-        }
-        onDispose { lyricView.listener = null }
     }
 
     // 播放页暗色背景：状态栏/手势条图标切浅色，离开恢复
@@ -151,7 +139,7 @@ fun PlayerScreen(viewModel: PlayerViewModel, lyricView: FoliaLyricView, onBack: 
     }
 
     Box(Modifier.fillMaxSize()) {
-        // Folia 歌词动画背景层（全屏 WebView）
+        // SyncedLyrics 原生歌词动画背景层
         AndroidView(factory = { lyricView }, modifier = Modifier.fillMaxSize())
 
         // 顶部压暗渐变：保证返回箭头和状态栏可读
@@ -310,7 +298,9 @@ fun PlayerScreen(viewModel: PlayerViewModel, lyricView: FoliaLyricView, onBack: 
                 durationMs = durationMs,
                 onSeekFraction = { fraction ->
                     viewModel.seekToFraction(fraction)
-                    if (durationMs > 0) lyricView.seekTo(fraction * durationMs / 1000.0)
+                    if (durationMs > 0) {
+                        lyricView.setPlaybackState((fraction * durationMs).toLong(), isPlaying)
+                    }
                 },
                 modifier = Modifier.padding(horizontal = 20.dp),
             )
