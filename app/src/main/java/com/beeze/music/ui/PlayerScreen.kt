@@ -1,5 +1,6 @@
 package com.beeze.music.ui
 
+import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -68,12 +69,24 @@ private val OnDarkFaint = Color(0x8CFFFFFF)      // 弱图标 55%
 private val OnDarkTrack = Color(0x40FFFFFF)      // 进度轨道 25%
 private val OnDarkAccent = Color(0xFFC98AFF)     // 暗底上的强调紫（比 primary 浅）
 
+class PlayerContentCache {
+    var loadedSongId: Long? = null
+    var lrc: String = ""
+    var hasLyrics: Boolean = false
+    var cover: Bitmap? = null
+}
+
 /**
  * 播放器页：SyncedLyrics 歌词动画作全屏背景层，Beeze 的封面/标题/进度条/控制叠加在上。
  * 整体暗色模式；有歌词时隐藏封面圆盘，让歌词动画占满视觉中心。
  */
 @Composable
-fun PlayerScreen(viewModel: PlayerViewModel, lyricView: SyncedLyricsView, onBack: () -> Unit) {
+fun PlayerScreen(
+    viewModel: PlayerViewModel,
+    lyricView: SyncedLyricsView,
+    contentCache: PlayerContentCache,
+    onBack: () -> Unit,
+) {
     BackHandler(onBack = onBack)
 
     val currentSong by viewModel.currentSong.collectAsStateWithLifecycle()
@@ -84,7 +97,8 @@ fun PlayerScreen(viewModel: PlayerViewModel, lyricView: SyncedLyricsView, onBack
     val likedIds by viewModel.likedIds.collectAsStateWithLifecycle()
 
     val song = currentSong ?: run {
-        // 没有播放任务时直接返回主页
+        // 删除最后一首等导致队列为空时，不停留在空白播放页
+        LaunchedEffect(Unit) { onBack() }
         Box(Modifier.fillMaxSize().background(BeezeColors.SurfaceSoft))
         return
     }
@@ -94,18 +108,23 @@ fun PlayerScreen(viewModel: PlayerViewModel, lyricView: SyncedLyricsView, onBack
     var lyricEffectsOpen by remember { mutableStateOf(false) }
     var sleepTimerOpen by remember { mutableStateOf(false) }
     var addPlaylistOpen by remember { mutableStateOf(false) }
+    var moreOpen by remember { mutableStateOf(false) }
     val sleepTimerRemainingMs by viewModel.sleepTimerRemainingMs.collectAsStateWithLifecycle()
 
     // null = 歌词加载中，true = 有歌词（隐藏封面），false = 无歌词（显示封面）
     var hasLyrics by remember { mutableStateOf<Boolean?>(null) }
 
     LaunchedEffect(song.id) {
+        if (contentCache.loadedSongId == song.id) {
+            hasLyrics = contentCache.hasLyrics
+            lyricView.setPlaybackState(viewModel.positionMs.value, isPlaying)
+            return@LaunchedEffect
+        }
         hasLyrics = null
         lyricView.setLrc("")
-        lyricView.setCover(null)
-        val lrc = withContext(Dispatchers.IO) { LyricsRepository.loadLrc(song) }
-        hasLyrics = !lrc.isNullOrBlank()
-        lyricView.setLrc(lrc.orEmpty())
+        val lrc = withContext(Dispatchers.IO) { LyricsRepository.loadLrc(song) }.orEmpty()
+        hasLyrics = lrc.isNotBlank()
+        lyricView.setLrc(lrc)
         lyricView.setPlaybackState(viewModel.positionMs.value, isPlaying)
 
         val request = ImageRequest.Builder(context)
@@ -115,6 +134,10 @@ fun PlayerScreen(viewModel: PlayerViewModel, lyricView: SyncedLyricsView, onBack
         val result = Coil.imageLoader(context).execute(request)
         val cover = ((result as? SuccessResult)?.drawable as? BitmapDrawable)?.bitmap
         lyricView.setCover(cover)
+        contentCache.loadedSongId = song.id
+        contentCache.lrc = lrc
+        contentCache.hasLyrics = hasLyrics == true
+        contentCache.cover = cover
     }
 
     // SDK 在两次校准之间自行推算进度；播放中每 500ms 同步一次 ExoPlayer 的真实位置。
@@ -287,7 +310,7 @@ fun PlayerScreen(viewModel: PlayerViewModel, lyricView: SyncedLyricsView, onBack
                 }
                 PlayerActionIcon(R.drawable.ic_add_playlist, "添加到歌单") { addPlaylistOpen = true }
                 PlayerActionIcon(R.drawable.ic_lyrics, "歌词") { lyricEffectsOpen = true }
-                PlayerActionIcon(R.drawable.ic_player_more, "更多") { showToast(context, "更多（占位）") }
+                PlayerActionIcon(R.drawable.ic_player_more, "更多") { moreOpen = true }
             }
 
             Spacer(Modifier.weight(24f))
@@ -385,6 +408,9 @@ fun PlayerScreen(viewModel: PlayerViewModel, lyricView: SyncedLyricsView, onBack
                 song = song,
                 onDismiss = { addPlaylistOpen = false },
             )
+        }
+        if (moreOpen) {
+            SongActionsSheet(viewModel, song, onDismiss = { moreOpen = false })
         }
     }
 }

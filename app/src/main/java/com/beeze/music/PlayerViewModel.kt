@@ -68,6 +68,8 @@ enum class EntryKind(val title: String, val subtitle: String) {
 
 /** 二级详情页：文件夹 / 专辑 / 艺术家 / 动态歌曲列表（For you 各卡片与歌单共用） */
 sealed interface DetailPage {
+    data object About : DetailPage
+    data object Privacy : DetailPage
     data class Folder(val folder: FolderItem) : DetailPage
     data class Album(val album: AlbumItem) : DetailPage
     data class Artist(val artist: ArtistItem) : DetailPage
@@ -529,6 +531,18 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         _playlists.value = playlistStore.playlists
     }
 
+    fun renamePlaylist(playlistId: Long, name: String): Boolean {
+        val renamed = playlistStore.rename(playlistId, name)
+        if (renamed) _playlists.value = playlistStore.playlists
+        return renamed
+    }
+
+    fun deletePlaylist(playlistId: Long) {
+        if (!playlistStore.delete(playlistId)) return
+        _playlists.value = playlistStore.playlists
+        if ((_detail.value as? DetailPage.SongList)?.playlistId == playlistId) closeDetail()
+    }
+
     /** 只从 App 与播放队列删除，真实音频文件保留；后续扫描按 id/path 过滤 */
     fun deleteSongsFromApp(songs: List<Song>) {
         if (songs.isEmpty()) return
@@ -658,6 +672,20 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         if (from !in 0 until c.mediaItemCount || to !in 0 until c.mediaItemCount || from == to) return
         queueVersion++
         c.moveMediaItem(from, to)
+    }
+
+    /** 追加歌曲到当前队列，跳过队列中已有歌曲，返回实际新增数量 */
+    fun addSongsToQueue(songs: List<Song>): Int {
+        val c = controller ?: return 0
+        val existingIds = (0 until c.mediaItemCount).mapTo(mutableSetOf()) { index ->
+            c.getMediaItemAt(index).mediaId
+        }
+        val additions = songs.distinctBy { it.id }.filterNot { it.id.toString() in existingIds }
+        if (additions.isEmpty()) return 0
+        queueVersion++
+        additions.forEach { songByMediaId[it.id.toString()] = it }
+        c.addMediaItems(additions.map { it.toMediaItem() })
+        return additions.size
     }
 
     /** 清空队列并停止播放 */

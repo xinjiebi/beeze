@@ -27,6 +27,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -49,6 +50,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.beeze.music.PlayMode
 import com.beeze.music.PlayerViewModel
 import com.beeze.music.R
+import com.beeze.music.data.Song
 import com.beeze.music.ui.theme.BeezeColors
 import com.beeze.music.ui.theme.BeezeType
 import kotlin.math.roundToInt
@@ -61,7 +63,7 @@ private val QueueIconTint = Color(0xFFE5E5E0)
  * 最小为可用高度的 35%，最大 75%。
  * 顶部拖拽把 60x2；标题行左侧「N songs」，右侧 随机/清空/添加；
  * 歌曲行 60dp：长按左侧把手拖拽排序（拖动时只移动视觉，松手才一次性提交 move），
- * 右侧 X 从队列移除、⋮ 更多（占位）。从 MiniPlayer 与播放页右下角列表按钮拉起。
+ * 右侧 X 从队列移除、⋮ 更多操作。从 MiniPlayer 与播放页右下角列表按钮拉起。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -70,6 +72,8 @@ fun QueueSheet(viewModel: PlayerViewModel) {
     val queueIndex by viewModel.queueIndex.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val listState = rememberLazyListState()
+    var showAddSongs by remember { mutableStateOf(false) }
+    var actionSong by remember { mutableStateOf<Pair<Int, Song>?>(null) }
 
     ModalBottomSheet(
         onDismissRequest = viewModel::closeQueue,
@@ -135,7 +139,7 @@ fun QueueSheet(viewModel: PlayerViewModel) {
                     contentDescription = "添加歌曲",
                     modifier = Modifier
                         .size(24.dp)
-                        .iconClickable { showToast(context, "添加歌曲（占位）") },
+                        .iconClickable { showAddSongs = true },
                 )
             }
 
@@ -178,7 +182,7 @@ fun QueueSheet(viewModel: PlayerViewModel) {
                             },
                         onClick = { viewModel.playQueueIndex(index) },
                         onRemove = { viewModel.removeQueueItem(index) },
-                        onMore = { showToast(context, "更多（占位）") },
+                        onMore = { actionSong = index to song },
                         dragHandle = Modifier.iconDragHandle(
                             onDragStart = {
                                 dragFrom = index
@@ -199,6 +203,18 @@ fun QueueSheet(viewModel: PlayerViewModel) {
             }
             }
         }
+    }
+
+    if (showAddSongs) {
+        QueueAddSongsSheet(viewModel, onDismiss = { showAddSongs = false })
+    }
+    actionSong?.let { (index, song) ->
+        SongActionsSheet(
+            viewModel = viewModel,
+            song = song,
+            queueIndex = index,
+            onDismiss = { actionSong = null },
+        )
     }
 }
 

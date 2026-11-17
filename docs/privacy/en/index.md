@@ -10,7 +10,7 @@ title: Beeze Privacy Policy
 **Last updated: November 17, 2026**  
 **Effective date: November 17, 2026**
 
-Welcome to Beeze. Beeze is a local music player provided by **【Developer Name】** (“we,” “us,” or “our”).
+Welcome to Beeze. Beeze is a local music player provided by **XJBI** (“we,” “us,” or “our”).
 
 We value your privacy. This policy explains how Beeze processes your local music and related data, which system permissions it requests, and how you can manage your data.
 
@@ -115,5 +115,5 @@ If an update materially changes the purposes or methods of personal information 
 
 If you have any questions, comments, or suggestions about this policy or Beeze’s privacy practices, please contact us at:
 
-- **Developer: 【Developer Name】**
-- **Email: 【Contact Email】**
+- **Developer: XJBI**
+- **Email: xinjiebi@gmail.com**

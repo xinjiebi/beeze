@@ -27,7 +27,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -60,7 +59,6 @@ import com.beeze.music.R
 import com.beeze.music.data.AlbumItem
 import com.beeze.music.data.ArtistItem
 import com.beeze.music.data.FolderItem
-import com.beeze.music.data.LyricsRepository
 import com.beeze.music.data.Song
 import com.beeze.music.data.SongSortOption
 import com.beeze.music.data.SongSortScope
@@ -107,7 +105,10 @@ fun HomeScreen(viewModel: PlayerViewModel) {
         )
 
         Column(Modifier.fillMaxSize().statusBarsPadding()) {
-            HomeNavbar(onSearch = viewModel::openSearch, onScan = viewModel::openScan)
+            HomeNavbar(
+                onSearch = viewModel::openSearch,
+                onAbout = { viewModel.openDetail(DetailPage.About) },
+            )
             HomeTabBar(selectedTab, onSelect = viewModel::selectTab)
 
             // 内容区支持左右滑动切换标签；与 selectedTab 双向同步
@@ -160,11 +161,9 @@ fun HomeScreen(viewModel: PlayerViewModel) {
     }
 }
 
-/** Navbar：左侧 logo + Beeze 字标，右侧搜索与设置入口 */
+/** Navbar：左侧 logo + Beeze 字标，右侧搜索与关于入口 */
 @Composable
-private fun HomeNavbar(onSearch: () -> Unit, onScan: () -> Unit) {
-    val context = LocalContext.current
-    var showSettingsEntry by remember { mutableStateOf(false) }
+private fun HomeNavbar(onSearch: () -> Unit, onAbout: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -191,65 +190,11 @@ private fun HomeNavbar(onSearch: () -> Unit, onScan: () -> Unit) {
         Spacer(Modifier.width(8.dp))
         Image(
             painter = painterResource(R.drawable.ic_setting),
-            contentDescription = "设置",
+            contentDescription = "关于",
             modifier = Modifier
                 .padding(4.dp)
                 .size(24.dp)
-                .iconClickable { showSettingsEntry = true },
-        )
-    }
-
-    // 设置入口：歌词文件权限与扫描过滤管理
-    if (showSettingsEntry) {
-        AlertDialog(
-            onDismissRequest = { showSettingsEntry = false },
-            title = { Text("歌词文件访问", style = BeezeType.title, color = BeezeColors.Ink) },
-            text = {
-                Column {
-                    Text(
-                        if (LyricsRepository.canReadLyrics()) "已授权，可以读取歌曲同目录下的 .lrc 歌词文件。"
-                        else "显示歌词需要「所有文件访问」权限（.lrc 不是媒体文件，Android 需要单独授权）。",
-                        style = BeezeType.bodySm,
-                        color = BeezeColors.Body,
-                    )
-                    Text(
-                        "Scan & filtered songs",
-                        style = BeezeType.button,
-                        color = BeezeColors.Primary,
-                        modifier = Modifier
-                            .padding(top = 16.dp)
-                            .clickable {
-                                showSettingsEntry = false
-                                onScan()
-                            },
-                    )
-                }
-            },
-            confirmButton = {
-                if (!LyricsRepository.canReadLyrics()) {
-                    Text(
-                        "去开启",
-                        style = BeezeType.button,
-                        color = BeezeColors.Primary,
-                        modifier = Modifier
-                            .padding(horizontal = 16.dp, vertical = 8.dp)
-                            .clickable {
-                                showSettingsEntry = false
-                                openAllFilesAccessSettings(context)
-                            },
-                    )
-                }
-            },
-            dismissButton = {
-                Text(
-                    "关闭",
-                    style = BeezeType.button,
-                    color = BeezeColors.Muted,
-                    modifier = Modifier
-                        .padding(horizontal = 16.dp, vertical = 8.dp)
-                        .clickable { showSettingsEntry = false },
-                )
-            },
+                .iconClickable(onClick = onAbout),
         )
     }
 }
@@ -509,7 +454,7 @@ private fun EqualizerBars() {
 /** Folders 标签 */
 @Composable
 private fun FoldersContent(viewModel: PlayerViewModel, folders: List<FolderItem>, libraryLoaded: Boolean) {
-    val context = LocalContext.current
+    var actionFolder by remember { mutableStateOf<FolderItem?>(null) }
     if (folders.isEmpty()) {
         // 加载完成前（缓存/扫描未返回）不显示空态文案，避免闪烁
         if (libraryLoaded) {
@@ -559,17 +504,25 @@ private fun FoldersContent(viewModel: PlayerViewModel, folders: List<FolderItem>
                     contentDescription = "更多",
                     modifier = Modifier
                         .size(24.dp)
-                        .iconClickable { showToast(context, "更多：${folder.name}") },
+                        .iconClickable { actionFolder = folder },
                 )
             }
         }
+    }
+    actionFolder?.let { folder ->
+        CollectionActionsSheet(
+            viewModel = viewModel,
+            title = folder.name,
+            songs = folder.songs,
+            onDismiss = { actionFolder = null },
+        )
     }
 }
 
 /** Albums 标签 */
 @Composable
 private fun AlbumsContent(viewModel: PlayerViewModel, albums: List<AlbumItem>, libraryLoaded: Boolean) {
-    val context = LocalContext.current
+    var actionAlbum by remember { mutableStateOf<AlbumItem?>(null) }
     if (albums.isEmpty()) {
         if (libraryLoaded) {
             StaticPage {
@@ -614,10 +567,18 @@ private fun AlbumsContent(viewModel: PlayerViewModel, albums: List<AlbumItem>, l
                     contentDescription = "更多",
                     modifier = Modifier
                         .size(24.dp)
-                        .iconClickable { showToast(context, "更多：${album.name}") },
+                        .iconClickable { actionAlbum = album },
                 )
             }
         }
+    }
+    actionAlbum?.let { album ->
+        CollectionActionsSheet(
+            viewModel = viewModel,
+            title = album.name,
+            songs = album.songs,
+            onDismiss = { actionAlbum = null },
+        )
     }
 }
 
@@ -669,7 +630,7 @@ private fun AlbumCover(album: AlbumItem) {
 /** Artists 标签 */
 @Composable
 private fun ArtistsContent(viewModel: PlayerViewModel, artists: List<ArtistItem>, libraryLoaded: Boolean) {
-    val context = LocalContext.current
+    var actionArtist by remember { mutableStateOf<ArtistItem?>(null) }
     if (artists.isEmpty()) {
         if (libraryLoaded) {
             StaticPage {
@@ -712,10 +673,18 @@ private fun ArtistsContent(viewModel: PlayerViewModel, artists: List<ArtistItem>
                     contentDescription = "更多",
                     modifier = Modifier
                         .size(24.dp)
-                        .iconClickable { showToast(context, "更多：${artist.name}") },
+                        .iconClickable { actionArtist = artist },
                 )
             }
         }
+    }
+    actionArtist?.let { artist ->
+        CollectionActionsSheet(
+            viewModel = viewModel,
+            title = artist.name,
+            songs = artist.songs,
+            onDismiss = { actionArtist = null },
+        )
     }
 }
 

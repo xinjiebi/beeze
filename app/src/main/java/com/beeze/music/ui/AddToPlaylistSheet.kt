@@ -47,6 +47,19 @@ fun AddToPlaylistSheet(viewModel: PlayerViewModel, songs: List<Song>, onDismiss:
     val songById = remember(allSongs) { allSongs.associateBy { it.id } }
     var showCreateDialog by remember { mutableStateOf(false) }
 
+    if (showCreateDialog) {
+        CreatePlaylistDialog(
+            onDismiss = { showCreateDialog = false },
+            onConfirm = { name ->
+                val playlist = viewModel.createPlaylistAndAdd(name, songs)
+                showToast(context, "Added ${songs.size} song${if (songs.size > 1) "s" else ""} to ${playlist.name}")
+                showCreateDialog = false
+                onDismiss()
+            },
+        )
+        return
+    }
+
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         containerColor = BeezeColors.Surface,
@@ -104,17 +117,5 @@ fun AddToPlaylistSheet(viewModel: PlayerViewModel, songs: List<Song>, onDismiss:
                 }
             }
         }
-    }
-
-    if (showCreateDialog) {
-        CreatePlaylistDialog(
-            onDismiss = { showCreateDialog = false },
-            onConfirm = { name ->
-                val playlist = viewModel.createPlaylistAndAdd(name, songs)
-                showToast(context, "Added ${songs.size} song${if (songs.size > 1) "s" else ""} to ${playlist.name}")
-                showCreateDialog = false
-                onDismiss()
-            },
-        )
     }
 }

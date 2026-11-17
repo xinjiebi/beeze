@@ -39,6 +39,10 @@ class SyncedLyricsView @JvmOverloads constructor(context: Context, attrs: Attrib
     private var blurred: Bitmap? = null
     private var oilCover: Bitmap? = null
     private var mosaicCover: Bitmap? = null
+    private var blurredSource: Bitmap? = null
+    private var oilCoverSource: Bitmap? = null
+    private var mosaicCoverSource: Bitmap? = null
+    private var backgroundGeneration = 0
     private val accent: Int get() = activeColor
     private var lines = emptyList<LyricLine>()
     private var rows = emptyList<Row>()
@@ -187,26 +191,47 @@ class SyncedLyricsView @JvmOverloads constructor(context: Context, attrs: Attrib
         paint.shader = null
     }
     private fun updateCover() {
-        blurred = null; oilCover = null; mosaicCover = null
         foregroundShaderImage = null; foregroundShader = null
         prepareBackground()
     }
-    // Only build the selected background; cache other styles when first selected.
+    // 后台只生成当前样式，旧背景保留到新图就绪，避免切歌时闪变。
     private fun prepareBackground() {
         val image = cover?.takeUnless { it.isRecycled } ?: return
-        when (backgroundStyle) {
-            BackgroundStyle.LIQUID -> if (blurred == null) {
-                val ratio = min(1f, 18f / min(image.width, image.height))
-                val w = (image.width * ratio).toInt().coerceIn(1, 48)
-                val h = (image.height * ratio).toInt().coerceIn(1, 48)
-                val tiny = Bitmap.createScaledBitmap(image, w, h, true)
-                val medium = Bitmap.createScaledBitmap(tiny, w * 8, h * 8, true)
-                if (tiny !== image && tiny !== medium) tiny.recycle()
-                blurred = medium
-            }
-            BackgroundStyle.OIL -> if (oilCover == null) oilCover = createOilCover(image)
-            BackgroundStyle.MOSAIC -> if (mosaicCover == null) mosaicCover = createDotMosaic(image)
+        val style = backgroundStyle
+        val upToDate = when (style) {
+            BackgroundStyle.LIQUID -> blurred != null && blurredSource === image
+            BackgroundStyle.OIL -> oilCover != null && oilCoverSource === image
+            BackgroundStyle.MOSAIC -> mosaicCover != null && mosaicCoverSource === image
         }
+        if (upToDate) return
+        val generation = ++backgroundGeneration
+        Thread({
+            val rendered = when (style) {
+                BackgroundStyle.LIQUID -> {
+                    val ratio = min(1f, 18f / min(image.width, image.height))
+                    val w = (image.width * ratio).toInt().coerceIn(1, 48)
+                    val h = (image.height * ratio).toInt().coerceIn(1, 48)
+                    val tiny = Bitmap.createScaledBitmap(image, w, h, true)
+                    val medium = Bitmap.createScaledBitmap(tiny, w * 8, h * 8, true)
+                    if (tiny !== image && tiny !== medium) tiny.recycle()
+                    medium
+                }
+                BackgroundStyle.OIL -> createOilCover(image)
+                BackgroundStyle.MOSAIC -> createDotMosaic(image)
+            }
+            post {
+                if (generation != backgroundGeneration || style != backgroundStyle || cover !== image) {
+                    rendered.recycle()
+                    return@post
+                }
+                when (style) {
+                    BackgroundStyle.LIQUID -> { blurred = rendered; blurredSource = image }
+                    BackgroundStyle.OIL -> { oilCover = rendered; oilCoverSource = image }
+                    BackgroundStyle.MOSAIC -> { mosaicCover = rendered; mosaicCoverSource = image }
+                }
+                invalidate()
+            }
+        }, "SyncedLyricsBackground").start()
     }
 
     /** Sample the cover into fine round tiles, cached until the artwork changes. */

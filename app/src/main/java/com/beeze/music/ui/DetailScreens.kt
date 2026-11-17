@@ -118,6 +118,8 @@ fun DetailScreen(viewModel: PlayerViewModel, detail: DetailPage) {
             )
         }
         when (detail) {
+            DetailPage.About -> AboutScreen(viewModel)
+            DetailPage.Privacy -> PrivacyScreen(viewModel)
             is DetailPage.Folder -> FolderDetail(viewModel, detail.folder, currentSong) { selectionSongs = it }
             is DetailPage.Album -> AlbumDetail(viewModel, detail.album, currentSong) { selectionSongs = it }
             is DetailPage.Artist -> ArtistDetail(viewModel, detail.artist, currentSong) { selectionSongs = it }
@@ -167,7 +169,7 @@ private fun SongListDetail(viewModel: PlayerViewModel, page: DetailPage.SongList
     }
     DetailBody(
         viewModel = viewModel,
-        title = page.title,
+        title = page.playlistId?.let { id -> playlists.firstOrNull { it.id == id }?.name } ?: page.title,
         titleAlwaysVisible = true,
         songs = songs,
         currentSong = currentSong,
@@ -342,6 +344,9 @@ private fun DetailBody(
     val displayedSongs = remember(songs, sortOption) { songs.sortedForDisplay(sortOption) }
     var showSortSheet by remember { mutableStateOf(false) }
     var actionSong by remember { mutableStateOf<Song?>(null) }
+    var showPlaylistActions by remember { mutableStateOf(false) }
+    var showRenamePlaylist by remember { mutableStateOf(false) }
+    var showDeletePlaylist by remember { mutableStateOf(false) }
     val density = LocalDensity.current
     val listState = rememberLazyListState()
     val headerHPx = with(density) { headerHeight.roundToPx() }
@@ -379,7 +384,12 @@ private fun DetailBody(
     ).value
 
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
-        DetailTopBar(title = title, titleAlpha = titleAlpha, onBack = viewModel::closeDetail)
+        DetailTopBar(
+            title = title,
+            titleAlpha = titleAlpha,
+            onBack = viewModel::closeDetail,
+            onMore = if (playlistId != null) ({ showPlaylistActions = true }) else null,
+        )
         // 内容区橡皮筋拉伸：歌曲不足一屏无法滚动时，拖拽仍可拉伸回弹
         Box(Modifier.fillMaxWidth().weight(1f).pageStretch()) {
             Column(Modifier.fillMaxSize()) {
@@ -439,11 +449,77 @@ private fun DetailBody(
     actionSong?.let { song ->
         SongActionsSheet(viewModel, song, playlistId = playlistId, onDismiss = { actionSong = null })
     }
+    if (showPlaylistActions && playlistId != null) {
+        PlaylistActionsSheet(
+            name = title,
+            onRename = {
+                showPlaylistActions = false
+                showRenamePlaylist = true
+            },
+            onDelete = {
+                showPlaylistActions = false
+                showDeletePlaylist = true
+            },
+            onDismiss = { showPlaylistActions = false },
+        )
+    }
+    if (showRenamePlaylist && playlistId != null) {
+        CreatePlaylistDialog(
+            title = "Rename playlist",
+            initialName = title,
+            confirmLabel = "Save",
+            onDismiss = { showRenamePlaylist = false },
+            onConfirm = { name ->
+                if (viewModel.renamePlaylist(playlistId, name)) {
+                    showToast(context, "Playlist renamed")
+                    showRenamePlaylist = false
+                } else {
+                    showToast(context, "Name cannot be empty")
+                }
+            },
+        )
+    }
+    if (showDeletePlaylist && playlistId != null) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showDeletePlaylist = false },
+            containerColor = BeezeColors.Surface,
+            title = { Text("Delete playlist?", style = BeezeType.title, color = BeezeColors.Body) },
+            text = {
+                Text(
+                    "Only this playlist will be deleted. Songs stay in your library.",
+                    style = BeezeType.bodySm,
+                    color = BeezeColors.Muted,
+                )
+            },
+            confirmButton = {
+                Text(
+                    "Delete",
+                    style = BeezeType.button,
+                    color = BeezeColors.Primary,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp).clickable {
+                        viewModel.deletePlaylist(playlistId)
+                        showToast(context, "Playlist deleted")
+                        showDeletePlaylist = false
+                    },
+                )
+            },
+            dismissButton = {
+                Text(
+                    "Cancel",
+                    style = BeezeType.button,
+                    color = BeezeColors.Muted,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp).clickable {
+                        showDeletePlaylist = false
+                    },
+                )
+            },
+        )
+    }
 }
 
-/** 详情页顶栏：32 触控区返回箭头 + 标题（Figma Frame 43，高 56，px 20） */
+/** 详情页顶栏：32 触控区返回箭头 + 标题，自建歌单右侧提供管理入口 */
 @Composable
-private fun DetailTopBar(title: String, titleAlpha: Float, onBack: () -> Unit) {
+private fun DetailTopBar(title: String, titleAlpha: Float, onBack: () -> Unit, onMore: (() -> Unit)? = null) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -466,8 +542,19 @@ private fun DetailTopBar(title: String, titleAlpha: Float, onBack: () -> Unit) {
             color = BeezeColors.Body,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.graphicsLayer { alpha = titleAlpha },
+            modifier = Modifier.weight(1f).graphicsLayer { alpha = titleAlpha },
         )
+        if (onMore != null) {
+            Spacer(Modifier.width(8.dp))
+            Image(
+                painter = painterResource(R.drawable.ic_more),
+                contentDescription = "歌单管理",
+                modifier = Modifier
+                    .size(32.dp)
+                    .iconClickable(onClick = onMore)
+                    .padding(4.dp),
+            )
+        }
     }
 }
 

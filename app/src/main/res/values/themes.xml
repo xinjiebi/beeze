@@ -6,4 +6,15 @@
         <item name="android:windowLightStatusBar">true</item>
         <item name="android:windowDrawsSystemBarBackgrounds">true</item>
     </style>
+
+    <style name="BeezePlayerDialog" parent="Theme.Beeze">
+        <item name="android:windowIsFloating">false</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowAnimationStyle">@style/BeezePlayerDialogAnimation</item>
+    </style>
+
+    <style name="BeezePlayerDialogAnimation">
+        <item name="android:windowEnterAnimation">@anim/player_slide_in</item>
+        <item name="android:windowExitAnimation">@anim/player_slide_out</item>
+    </style>
 </resources>

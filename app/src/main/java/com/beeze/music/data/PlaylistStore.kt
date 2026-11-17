@@ -69,6 +69,28 @@ class PlaylistStore(context: Context) {
         return playlists.first { it.id == playlist.id }
     }
 
+    @Synchronized
+    fun rename(playlistId: Long, name: String): Boolean {
+        val trimmed = name.trim()
+        if (trimmed.isEmpty()) return false
+        val index = playlists.indexOfFirst { it.id == playlistId }
+        if (index < 0) return false
+        playlists = playlists.toMutableList().apply {
+            this[index] = this[index].copy(name = trimmed)
+        }
+        save()
+        return true
+    }
+
+    @Synchronized
+    fun delete(playlistId: Long): Boolean {
+        val remaining = playlists.filterNot { it.id == playlistId }
+        if (remaining.size == playlists.size) return false
+        playlists = remaining
+        save()
+        return true
+    }
+
     /** 仅从指定歌单移除歌曲，不影响媒体库 */
     @Synchronized
     fun removeSongs(playlistId: Long, songIds: Set<Long>) {

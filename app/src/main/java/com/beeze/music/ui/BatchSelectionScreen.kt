@@ -323,7 +323,7 @@ private fun BatchSongRow(
 }
 
 @Composable
-private fun SelectionIndicator(selected: Boolean) {
+internal fun SelectionIndicator(selected: Boolean) {
     Canvas(Modifier.size(24.dp)) {
         val unit = size.width / 24f
         if (selected) {

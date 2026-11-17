@@ -45,6 +45,7 @@ fun SongActionsSheet(
     viewModel: PlayerViewModel,
     song: Song,
     playlistId: Long? = null,
+    queueIndex: Int? = null,
     onDismiss: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -111,25 +112,35 @@ fun SongActionsSheet(
                 },
             )
             SongActionRow(
-                iconRes = R.drawable.ic_more,
+                iconRes = R.drawable.ic_edit,
                 label = "Rename in Beeze",
                 onClick = { showRenameDialog = true },
             )
             SongActionRow(
-                iconRes = R.drawable.ic_note_ph,
+                iconRes = R.drawable.ic_info,
                 label = "Song info",
                 onClick = { showInfoDialog = true },
             )
             SongActionRow(
                 iconRes = R.drawable.ic_queue_clear,
-                label = if (playlistId == null) "Delete" else "Remove from Playlist",
+                label = when {
+                    queueIndex != null -> "Remove from Queue"
+                    playlistId != null -> "Remove from Playlist"
+                    else -> "Delete"
+                },
                 onClick = {
-                    if (playlistId == null) {
-                        showDeleteDialog = true
-                    } else {
-                        viewModel.removeSongsFromPlaylist(playlistId, setOf(song.id))
-                        showToast(context, "Removed from playlist")
-                        onDismiss()
+                    when {
+                        queueIndex != null -> {
+                            viewModel.removeQueueItem(queueIndex)
+                            showToast(context, "Removed from queue")
+                            onDismiss()
+                        }
+                        playlistId != null -> {
+                            viewModel.removeSongsFromPlaylist(playlistId, setOf(song.id))
+                            showToast(context, "Removed from playlist")
+                            onDismiss()
+                        }
+                        else -> showDeleteDialog = true
                     }
                 },
             )
@@ -189,7 +200,7 @@ fun SongActionsSheet(
 }
 
 @Composable
-private fun SongActionRow(iconRes: Int, label: String, onClick: () -> Unit) {
+internal fun SongActionRow(iconRes: Int, label: String, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()

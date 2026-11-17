@@ -1,19 +1,18 @@
 package com.beeze.music
 
 import android.Manifest
+import android.app.Dialog
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Environment
+import android.view.ViewGroup
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -35,8 +34,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.TransformOrigin
-import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -46,6 +44,9 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.setViewTreeLifecycleOwner
+import androidx.lifecycle.setViewTreeViewModelStoreOwner
+import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import coil.Coil
 import coil.ImageLoader
 import com.beeze.music.data.SongArtworkFetcher
@@ -54,6 +55,7 @@ import com.beeze.music.ui.DetailScreen
 import com.beeze.music.ui.LibraryScanScreen
 import com.beeze.music.ui.LyricThemes
 import com.beeze.music.ui.openAllFilesAccessSettings
+import com.beeze.music.ui.PlayerContentCache
 import com.beeze.music.ui.PlayerScreen
 import com.beeze.music.ui.QueueSheet
 import com.beeze.music.ui.SearchScreen
@@ -113,6 +115,7 @@ fun BeezeApp(viewModel: PlayerViewModel) {
             emptyLyricsCoverEnabled = false
         }
     }
+    val playerContentCache = remember { PlayerContentCache() }
 
     // 授权策略：API 30+ 直接引导开启「所有文件访问」——一个权限同时覆盖音频扫描与
     // .lrc 歌词读取，不再先弹音频权限再接力跳设置页；API 30 以下走 READ_EXTERNAL_STORAGE 弹窗
@@ -162,60 +165,67 @@ fun BeezeApp(viewModel: PlayerViewModel) {
                 }
             }
         )
-        detailPage != null -> DetailScreen(viewModel, detailPage!!)
         scanOpen -> LibraryScanScreen(viewModel)
+        detailPage != null -> DetailScreen(viewModel, detailPage!!)
         searchOpen -> SearchScreen(viewModel)
         else -> HomeScreen(viewModel)
     }
 
-    // 播放器覆盖层：从页面底部拉起，关闭时向底部缩小收回；下层主页保持原状态
-    PlayerOverlay(visible = screen == AppScreen.Player) {
-        PlayerScreen(
-            viewModel = viewModel,
-            lyricView = lyricView,
-            onBack = viewModel::closePlayer,
-        )
+    val queueOpen by viewModel.queueOpen.collectAsStateWithLifecycle()
+
+    // 播放器使用独立原生窗口，整体从底部拉起；下层主页保持原状态
+    PlayerOverlay(visible = screen == AppScreen.Player, onDismiss = viewModel::closePlayer) {
+        Box(Modifier.fillMaxSize()) {
+            PlayerScreen(
+                viewModel = viewModel,
+                lyricView = lyricView,
+                contentCache = playerContentCache,
+                onBack = viewModel::closePlayer,
+            )
+            if (queueOpen) QueueSheet(viewModel)
+        }
     }
 
-    // 播放列表面板：全局弹层，MiniPlayer 与播放页的列表按钮都能拉起
-    val queueOpen by viewModel.queueOpen.collectAsStateWithLifecycle()
-    if (queueOpen) {
+    // 非播放页的播放列表面板由主页窗口承接
+    if (queueOpen && screen != AppScreen.Player) {
         QueueSheet(viewModel)
     }
 }
 
-/**
- * 播放器拉起/收回动画容器。
- * progress：0 = 全屏展开，1 = 收起到屏幕外（不渲染）。
- * 打开：从底部滑上；关闭：下滑的同时以底部为中心缩小。
- */
+/** 由系统窗口动画统一移动歌词背景和 Compose 控件，避免两层绘制错位。 */
 @Composable
-private fun PlayerOverlay(visible: Boolean, content: @Composable () -> Unit) {
-    val progress = remember { Animatable(1f) }
-    LaunchedEffect(visible) {
-        if (visible) {
-            progress.animateTo(0f, tween(400, easing = FastOutSlowInEasing))
-        } else {
-            progress.animateTo(1f, tween(300, easing = FastOutSlowInEasing))
+private fun PlayerOverlay(visible: Boolean, onDismiss: () -> Unit, content: @Composable () -> Unit) {
+    if (!visible) return
+    val activity = LocalContext.current as ComponentActivity
+    DisposableEffect(Unit) {
+        val composeView = ComposeView(activity).apply {
+            setViewTreeLifecycleOwner(activity)
+            setViewTreeViewModelStoreOwner(activity)
+            setViewTreeSavedStateRegistryOwner(activity)
+            setContent { content() }
+        }
+        val dialog = Dialog(activity, R.style.BeezePlayerDialog).apply {
+            setContentView(composeView)
+            setOnDismissListener { onDismiss() }
+        }
+        dialog.window?.let { window ->
+            window.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+            WindowCompat.setDecorFitsSystemWindows(window, false)
+            WindowCompat.getInsetsController(window, composeView).apply {
+                isAppearanceLightStatusBars = false
+                isAppearanceLightNavigationBars = false
+            }
+        }
+        dialog.show()
+        dialog.window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+        onDispose {
+            WindowCompat.getInsetsController(activity.window, activity.window.decorView).apply {
+                isAppearanceLightStatusBars = true
+                isAppearanceLightNavigationBars = true
+            }
+            dialog.dismiss()
         }
     }
-    val p = progress.value
-    if (!visible && p >= 1f) return
-    Box(
-        Modifier
-            .fillMaxSize()
-            .graphicsLayer {
-                translationY = p * size.height
-                if (!visible) {
-                    // 关闭时向页面底部缩小
-                    val scale = 1f - 0.25f * p
-                    scaleX = scale
-                    scaleY = scale
-                    transformOrigin = TransformOrigin(0.5f, 1f)
-                }
-            },
-        content = { content() },
-    )
 }
 
 /** 未授权时的引导 UI */

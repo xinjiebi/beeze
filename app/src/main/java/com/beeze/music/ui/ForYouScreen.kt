@@ -799,10 +799,16 @@ internal fun PlaylistRow(playlist: Playlist, firstSong: Song?, onClick: () -> Un
     }
 }
 
-/** 新建歌单弹窗（Figma 173:3739） */
+/** 新建/重命名歌单弹窗，默认聚焦输入框并拉起键盘（Figma 173:3739） */
 @Composable
-internal fun CreatePlaylistDialog(onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
-    var name by remember { mutableStateOf("") }
+internal fun CreatePlaylistDialog(
+    onDismiss: () -> Unit,
+    onConfirm: (String) -> Unit,
+    title: String = "Create playlist",
+    initialName: String = "",
+    confirmLabel: String = "Create",
+) {
+    var name by remember { mutableStateOf(initialName) }
     val focusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
     LaunchedEffect(Unit) {
@@ -820,7 +826,7 @@ internal fun CreatePlaylistDialog(onDismiss: () -> Unit, onConfirm: (String) -> 
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Text(
-                "Create playlist",
+                title,
                 style = BeezeType.button.copy(fontWeight = FontWeight.Bold),
                 color = BeezeColors.Body,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
@@ -866,7 +872,7 @@ internal fun CreatePlaylistDialog(onDismiss: () -> Unit, onConfirm: (String) -> 
                         .clickable(onClick = onDismiss),
                 )
                 Text(
-                    "Create",
+                    confirmLabel,
                     style = BeezeType.button.copy(fontWeight = FontWeight.Bold),
                     color = BeezeColors.Primary,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,
