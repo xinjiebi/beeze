@@ -4,6 +4,7 @@ import android.content.ContentUris
 import android.content.Context
 import android.os.Build
 import android.provider.MediaStore
+import com.beeze.music.R
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -16,10 +17,20 @@ class MediaStoreRepository(private val context: Context) {
 
     private val filterStore = LibraryFilterStore(context)
     val filteredSongs: List<Song> get() = filterStore.songs
+    val filteredFolders: List<FilteredFolder> get() = filterStore.folders
+    var skipShortAudio: Boolean
+        get() = filterStore.skipShortAudio
+        set(value) { filterStore.skipShortAudio = value }
 
     fun filterSongs(songs: List<Song>) = filterStore.add(songs)
 
+    suspend fun persistFilters() = withContext(Dispatchers.IO) { filterStore.persist() }
+
     fun restoreFilteredSong(song: Song) = filterStore.remove(song)
+
+    fun filterFolder(folder: FolderItem) = filterStore.addFolder(folder)
+
+    fun restoreFilteredFolder(folder: FilteredFolder) = filterStore.removeFolder(folder)
 
     companion object {
         // Han-Latin 转写需要 API 29+（ICU）
@@ -44,7 +55,9 @@ class MediaStoreRepository(private val context: Context) {
         }
     }
 
-    suspend fun querySongs(): List<Song> = withContext(Dispatchers.IO) {
+    suspend fun querySongs(
+        onProgress: (scanned: Int, total: Int) -> Unit = { _, _ -> },
+    ): List<Song> = withContext(Dispatchers.IO) {
         val songs = mutableListOf<Song>()
         val collection = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
         val projection = arrayOf(
@@ -57,7 +70,6 @@ class MediaStoreRepository(private val context: Context) {
             MediaStore.Audio.Media.DATA,
             MediaStore.Audio.Media.DATE_ADDED,
         )
-        // 只取音乐文件，且过滤掉过短的铃声片段
         val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0"
         // 注意：部分 ROM（如 MIUI）的 MediaProvider 不支持 COLLATE LOCALIZED，会抛
         // IllegalArgumentException("Invalid token LOCALIZED")，因此只用普通排序，
@@ -79,21 +91,31 @@ class MediaStoreRepository(private val context: Context) {
                 val durationCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
                 val dataCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA)
                 val dateAddedCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_ADDED)
+                val total = cursor.count
+                var scanned = 0
                 while (cursor.moveToNext()) {
                     val id = cursor.getLong(idCol)
-                    val path = cursor.getString(dataCol) ?: continue
-                    if (filterStore.contains(id, path)) continue
-                    songs += Song(
-                        id = id,
-                        title = cursor.getString(titleCol) ?: "未知标题",
-                        artist = cursor.getString(artistCol)?.takeIf { it != "<unknown>" } ?: "未知艺术家",
-                        album = cursor.getString(albumCol)?.takeIf { it != "<unknown>" } ?: "未知专辑",
-                        albumId = cursor.getLong(albumIdCol),
-                        durationMs = cursor.getLong(durationCol),
-                        contentUri = ContentUris.withAppendedId(collection, id),
-                        path = path,
-                        dateAddedSeconds = cursor.getLong(dateAddedCol),
-                    )
+                    val path = cursor.getString(dataCol)
+                    val durationMs = cursor.getLong(durationCol)
+                    if (path != null && !filterStore.contains(id, path) &&
+                        (!skipShortAudio || durationMs >= 60_000L)
+                    ) {
+                        songs += Song(
+                            id = id,
+                            title = cursor.getString(titleCol) ?: context.getString(R.string.unknown_title),
+                            artist = cursor.getString(artistCol)?.takeIf { it != "<unknown>" }
+                                ?: context.getString(R.string.unknown_artist),
+                            album = cursor.getString(albumCol)?.takeIf { it != "<unknown>" }
+                                ?: context.getString(R.string.unknown_album),
+                            albumId = cursor.getLong(albumIdCol),
+                            durationMs = durationMs,
+                            contentUri = ContentUris.withAppendedId(collection, id),
+                            path = path,
+                            dateAddedSeconds = cursor.getLong(dateAddedCol),
+                        )
+                    }
+                    scanned++
+                    if (scanned == total || scanned % 4 == 0) onProgress(scanned, total)
                 }
             }
         // 本地化排序放在内存中做（中文按拼音、英文按字母混排 A→Z，非字母开头的 # 组排最后），
@@ -152,9 +174,15 @@ class MediaStoreRepository(private val context: Context) {
                 add(
                     Song(
                         id = id,
-                        title = o.getString("title"),
-                        artist = o.getString("artist"),
-                        album = o.getString("album"),
+                        title = o.getString("title").let {
+                            if (it == "未知标题" || it == "Unknown title") context.getString(R.string.unknown_title) else it
+                        },
+                        artist = o.getString("artist").let {
+                            if (it == "未知艺术家" || it == "Unknown artist") context.getString(R.string.unknown_artist) else it
+                        },
+                        album = o.getString("album").let {
+                            if (it == "未知专辑" || it == "Unknown album") context.getString(R.string.unknown_album) else it
+                        },
                         albumId = o.getLong("albumId"),
                         durationMs = o.getLong("durationMs"),
                         contentUri = ContentUris.withAppendedId(
@@ -165,7 +193,9 @@ class MediaStoreRepository(private val context: Context) {
                     )
                 )
             }
-        }.filterNot { filterStore.contains(it.id, it.path) }
+        }.filterNot {
+            filterStore.contains(it.id, it.path) || (skipShortAudio && it.durationMs < 60_000L)
+        }
     }.getOrNull()
 
     suspend fun saveCachedSongs(songs: List<Song>) = withContext(Dispatchers.IO) {

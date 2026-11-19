@@ -24,9 +24,9 @@ class SongArtworkFetcher(
 
     override suspend fun fetch(): FetchResult {
         val bytes = readAlbumArtTable() ?: readEmbeddedPicture()
-            ?: throw IllegalStateException("该音频没有封面")
+            ?: throw IllegalStateException("No artwork available for this audio file")
         val bitmap = decodeScaled(bytes, TARGET_SIZE)
-            ?: throw IllegalStateException("封面解码失败")
+            ?: throw IllegalStateException("Failed to decode artwork")
         return DrawableResult(
             drawable = bitmap.toDrawable(context.resources),
             isSampled = true,

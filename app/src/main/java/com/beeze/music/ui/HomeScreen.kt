@@ -1,5 +1,9 @@
 package com.beeze.music.ui
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -39,10 +43,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInParent
+import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
@@ -50,6 +56,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.beeze.music.DetailPage
@@ -65,11 +72,11 @@ import com.beeze.music.data.SongSortScope
 import com.beeze.music.data.sortedForDisplay
 import com.beeze.music.ui.theme.BeezeColors
 import com.beeze.music.ui.theme.BeezeType
+import kotlinx.coroutines.delay
 
 /** 主页：Navbar + 标签行 + 列表内容 + 底部悬浮 MiniPlayer */
 @Composable
 fun HomeScreen(viewModel: PlayerViewModel) {
-    val context = LocalContext.current
     val selectedTab by viewModel.selectedTab.collectAsStateWithLifecycle()
     val songs by viewModel.songs.collectAsStateWithLifecycle()
     val folders by viewModel.folders.collectAsStateWithLifecycle()
@@ -78,6 +85,27 @@ fun HomeScreen(viewModel: PlayerViewModel) {
     val currentSong by viewModel.currentSong.collectAsStateWithLifecycle()
     val isPlaying by viewModel.isPlaying.collectAsStateWithLifecycle()
     val libraryLoaded by viewModel.libraryLoaded.collectAsStateWithLifecycle()
+    val scanning by viewModel.scanning.collectAsStateWithLifecycle()
+    val initialHomeScan by viewModel.initialHomeScan.collectAsStateWithLifecycle()
+    val scanProgress by viewModel.scanProgress.collectAsStateWithLifecycle()
+    val absorbProgress = remember(initialHomeScan) { Animatable(0f) }
+    val scanButtonPulse = remember { Animatable(1f) }
+    var scanButtonCenter by remember { mutableStateOf<Offset?>(null) }
+    var scanOriginCenter by remember { mutableStateOf<Offset?>(null) }
+    val contentAlpha by animateFloatAsState(
+        targetValue = if (initialHomeScan && scanning) 0f else 1f,
+        animationSpec = tween(500),
+        label = "initialHomeScanContent",
+    )
+    LaunchedEffect(initialHomeScan, scanning, libraryLoaded) {
+        if (initialHomeScan && !scanning && libraryLoaded) {
+            delay(250)
+            absorbProgress.animateTo(1f, tween(650, easing = FastOutSlowInEasing))
+            scanButtonPulse.animateTo(1.3f, tween(100))
+            scanButtonPulse.animateTo(1f, tween(160))
+            viewModel.completeInitialHomeScan()
+        }
+    }
     var selectingSongs by remember { mutableStateOf(false) }
 
     if (selectingSongs) {
@@ -107,7 +135,12 @@ fun HomeScreen(viewModel: PlayerViewModel) {
         Column(Modifier.fillMaxSize().statusBarsPadding()) {
             HomeNavbar(
                 onSearch = viewModel::openSearch,
+                onScan = viewModel::openScan,
                 onAbout = { viewModel.openDetail(DetailPage.About) },
+                scanning = scanning,
+                scanScale = scanButtonPulse.value * (1f + absorbProgress.value * 0.12f),
+                scanHaloAlpha = absorbProgress.value * 0.16f,
+                onScanPositioned = { scanButtonCenter = it },
             )
             HomeTabBar(selectedTab, onSelect = viewModel::selectTab)
 
@@ -126,7 +159,11 @@ fun HomeScreen(viewModel: PlayerViewModel) {
                 val page = HomeTab.entries.indexOf(selectedTab)
                 if (pagerState.currentPage != page) pagerState.animateScrollToPage(page)
             }
-            HorizontalPager(state = pagerState, modifier = Modifier.weight(1f)) { page ->
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.weight(1f).graphicsLayer { alpha = contentAlpha },
+                userScrollEnabled = !initialHomeScan,
+            ) { page ->
                 // 每页套橡皮筋拉伸：列表不足一屏无法滚动时，拖拽仍有拉伸回弹
                 Box(Modifier.fillMaxSize().pageStretch()) {
                     when (HomeTab.entries[page]) {
@@ -158,12 +195,62 @@ fun HomeScreen(viewModel: PlayerViewModel) {
                     .padding(bottom = 28.dp),
             )
         }
+
+        if (initialHomeScan) {
+            Column(Modifier.fillMaxSize().statusBarsPadding().zIndex(2f)) {
+                Spacer(Modifier.height(108.dp))
+                Box(Modifier.fillMaxWidth().weight(1f)) {
+                    Box(
+                        Modifier
+                            .align(Alignment.Center)
+                            .size(300.dp)
+                            .onGloballyPositioned {
+                                scanOriginCenter = it.positionInRoot() +
+                                    Offset(it.size.width / 2f, it.size.height / 2f)
+                            },
+                    ) {
+                        Box(
+                            Modifier.fillMaxSize().graphicsLayer {
+                                val origin = scanOriginCenter
+                                val target = scanButtonCenter
+                                if (origin != null && target != null) {
+                                    translationX = (target.x - origin.x) * absorbProgress.value
+                                    translationY = (target.y - origin.y) * absorbProgress.value
+                                }
+                                val scale = 1f - absorbProgress.value * 0.92f
+                                scaleX = scale
+                                scaleY = scale
+                                alpha = 1f - absorbProgress.value * 0.85f
+                            },
+                        ) {
+                            ScanVisualization(scanning)
+                        }
+                    }
+                    Column(
+                        Modifier
+                            .align(Alignment.BottomCenter)
+                            .padding(bottom = 56.dp)
+                            .graphicsLayer { alpha = 1f - absorbProgress.value },
+                    ) {
+                        ScanProgress(scanProgress.scanned, scanProgress.total)
+                    }
+                }
+            }
+        }
     }
 }
 
-/** Navbar：左侧 logo + Beeze 字标，右侧搜索与关于入口 */
+/** Navbar：左侧 logo + Beeze 字标，右侧搜索、扫描与关于入口 */
 @Composable
-private fun HomeNavbar(onSearch: () -> Unit, onAbout: () -> Unit) {
+private fun HomeNavbar(
+    onSearch: () -> Unit,
+    onScan: () -> Unit,
+    onAbout: () -> Unit,
+    scanning: Boolean,
+    scanScale: Float,
+    scanHaloAlpha: Float,
+    onScanPositioned: (Offset) -> Unit,
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -181,7 +268,8 @@ private fun HomeNavbar(onSearch: () -> Unit, onAbout: () -> Unit) {
         Spacer(Modifier.weight(1f))
         Image(
             painter = painterResource(R.drawable.ic_search),
-            contentDescription = "搜索",
+            contentDescription = tr(R.string.search),
+            colorFilter = themeIconTint(),
             modifier = Modifier
                 .padding(4.dp)
                 .size(24.dp)
@@ -189,8 +277,30 @@ private fun HomeNavbar(onSearch: () -> Unit, onAbout: () -> Unit) {
         )
         Spacer(Modifier.width(8.dp))
         Image(
+            painter = painterResource(R.drawable.ic_scan),
+            contentDescription = tr(if (scanning) R.string.scanning_local_files else R.string.scan_local_music),
+            colorFilter = themeIconTint(),
+            modifier = Modifier
+                .onGloballyPositioned {
+                    onScanPositioned(
+                        it.positionInRoot() + Offset(it.size.width / 2f, it.size.height / 2f)
+                    )
+                }
+                .graphicsLayer {
+                    scaleX = scanScale
+                    scaleY = scanScale
+                }
+                .clip(CircleShape)
+                .background(BeezeColors.Primary.copy(alpha = scanHaloAlpha))
+                .padding(4.dp)
+                .size(24.dp)
+                .iconClickable(onClick = onScan),
+        )
+        Spacer(Modifier.width(8.dp))
+        Image(
             painter = painterResource(R.drawable.ic_setting),
-            contentDescription = "关于",
+            contentDescription = tr(R.string.about),
+            colorFilter = themeIconTint(),
             modifier = Modifier
                 .padding(4.dp)
                 .size(24.dp)
@@ -265,7 +375,7 @@ private fun HomeTabBar(selected: HomeTab, onSelect: (HomeTab) -> Unit) {
                     Spacer(Modifier.width(4.dp))
                 }
                 Text(
-                    text = tab.label,
+                    text = tr(tab.labelRes),
                     style = if (isSelected) BeezeType.title else BeezeType.bodyMd,
                     color = if (isSelected) BeezeColors.Primary else BeezeColors.Muted,
                 )
@@ -315,12 +425,13 @@ private fun SongsContent(
             ) {
                 Image(
                     painter = painterResource(R.drawable.ic_shuffle),
-                    contentDescription = "随机播放",
+                    contentDescription = tr(R.string.shuffle),
+                    colorFilter = themeIconTint(),
                     modifier = Modifier.size(24.dp),
                 )
                 Spacer(Modifier.width(4.dp))
                 Text(
-                    "Shuffle (${sortedSongs.size} songs)",
+                    tr(R.string.shuffle_songs_count, sortedSongs.size),
                     style = BeezeType.bodyMd,
                     color = BeezeColors.Ink,
                 )
@@ -328,7 +439,8 @@ private fun SongsContent(
             Spacer(Modifier.weight(1f))
             Image(
                 painter = painterResource(R.drawable.ic_multiple),
-                contentDescription = "多选",
+                contentDescription = tr(R.string.multi_select),
+                colorFilter = themeIconTint(),
                 modifier = Modifier
                     .size(24.dp)
                     .iconClickable(onClick = onMultiSelect),
@@ -336,7 +448,8 @@ private fun SongsContent(
             Spacer(Modifier.width(12.dp))
             Image(
                 painter = painterResource(R.drawable.ic_sort),
-                contentDescription = "排序",
+                contentDescription = tr(R.string.sort),
+                colorFilter = themeIconTint(),
                 modifier = Modifier
                     .size(24.dp)
                     .iconClickable { showSortSheet = true },
@@ -354,7 +467,7 @@ private fun SongsContent(
                     verticalArrangement = Arrangement.Center,
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    Text("本机暂无音频文件", style = BeezeType.bodyMd, color = BeezeColors.Muted)
+                    Text(tr(R.string.no_audio_files), style = BeezeType.bodyMd, color = BeezeColors.Muted)
                 }
             }
         } else {
@@ -426,7 +539,8 @@ internal fun SongRow(song: Song, isPlayingRow: Boolean, onClick: () -> Unit, onM
         }
         Image(
             painter = painterResource(R.drawable.ic_more),
-            contentDescription = "更多",
+            contentDescription = tr(R.string.more),
+            colorFilter = themeIconTint(),
             modifier = Modifier
                 .size(24.dp)
                 .iconClickable(onClick = onMore),
@@ -459,7 +573,7 @@ private fun FoldersContent(viewModel: PlayerViewModel, folders: List<FolderItem>
         // 加载完成前（缓存/扫描未返回）不显示空态文案，避免闪烁
         if (libraryLoaded) {
             StaticPage {
-                Text("本机暂无音频文件", style = BeezeType.bodyMd, color = BeezeColors.Muted)
+                Text(tr(R.string.no_audio_files), style = BeezeType.bodyMd, color = BeezeColors.Muted)
             }
         }
         return
@@ -480,6 +594,7 @@ private fun FoldersContent(viewModel: PlayerViewModel, folders: List<FolderItem>
                 Image(
                     painter = painterResource(R.drawable.ic_folder),
                     contentDescription = null,
+                    colorFilter = themeIconTint(BeezeColors.PrimarySubtle),
                     modifier = Modifier.size(44.dp),
                 )
                 Spacer(Modifier.width(8.dp))
@@ -492,7 +607,7 @@ private fun FoldersContent(viewModel: PlayerViewModel, folders: List<FolderItem>
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
-                        "${folder.songs.size} songs · ${folder.path}",
+                        "${songsCount(folder.songs.size)} · ${folder.path}",
                         style = BeezeType.caption,
                         color = BeezeColors.Muted,
                         maxLines = 1,
@@ -501,7 +616,8 @@ private fun FoldersContent(viewModel: PlayerViewModel, folders: List<FolderItem>
                 }
                 Image(
                     painter = painterResource(R.drawable.ic_more),
-                    contentDescription = "更多",
+                    contentDescription = tr(R.string.more),
+                    colorFilter = themeIconTint(),
                     modifier = Modifier
                         .size(24.dp)
                         .iconClickable { actionFolder = folder },
@@ -515,6 +631,7 @@ private fun FoldersContent(viewModel: PlayerViewModel, folders: List<FolderItem>
             title = folder.name,
             songs = folder.songs,
             onDismiss = { actionFolder = null },
+            onDelete = { viewModel.deleteFolderFromApp(folder) },
         )
     }
 }
@@ -526,7 +643,7 @@ private fun AlbumsContent(viewModel: PlayerViewModel, albums: List<AlbumItem>, l
     if (albums.isEmpty()) {
         if (libraryLoaded) {
             StaticPage {
-                Text("本机暂无音频文件", style = BeezeType.bodyMd, color = BeezeColors.Muted)
+                Text(tr(R.string.no_audio_files), style = BeezeType.bodyMd, color = BeezeColors.Muted)
             }
         }
         return
@@ -555,7 +672,7 @@ private fun AlbumsContent(viewModel: PlayerViewModel, albums: List<AlbumItem>, l
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
-                        "${album.artist} · ${album.songs.size} song${if (album.songs.size > 1) "s" else ""}",
+                        "${album.artist} · ${songsCount(album.songs.size)}",
                         style = BeezeType.caption,
                         color = BeezeColors.Muted,
                         maxLines = 1,
@@ -564,7 +681,8 @@ private fun AlbumsContent(viewModel: PlayerViewModel, albums: List<AlbumItem>, l
                 }
                 Image(
                     painter = painterResource(R.drawable.ic_more),
-                    contentDescription = "更多",
+                    contentDescription = tr(R.string.more),
+                    colorFilter = themeIconTint(),
                     modifier = Modifier
                         .size(24.dp)
                         .iconClickable { actionAlbum = album },
@@ -634,7 +752,7 @@ private fun ArtistsContent(viewModel: PlayerViewModel, artists: List<ArtistItem>
     if (artists.isEmpty()) {
         if (libraryLoaded) {
             StaticPage {
-                Text("本机暂无音频文件", style = BeezeType.bodyMd, color = BeezeColors.Muted)
+                Text(tr(R.string.no_audio_files), style = BeezeType.bodyMd, color = BeezeColors.Muted)
             }
         }
         return
@@ -663,14 +781,15 @@ private fun ArtistsContent(viewModel: PlayerViewModel, artists: List<ArtistItem>
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
-                        "${artist.songs.size} songs",
+                        songsCount(artist.songs.size),
                         style = BeezeType.caption,
                         color = BeezeColors.Muted,
                     )
                 }
                 Image(
                     painter = painterResource(R.drawable.ic_more),
-                    contentDescription = "更多",
+                    contentDescription = tr(R.string.more),
+                    colorFilter = themeIconTint(),
                     modifier = Modifier
                         .size(24.dp)
                         .iconClickable { actionArtist = artist },
@@ -724,21 +843,22 @@ internal fun MiniPlayer(
                 Text(
                     song.title,
                     style = BeezeType.bodySm.copy(fontWeight = FontWeight.Medium),
-                    color = Color(0xFF333333),
+                    color = BeezeColors.MiniPlayerTitle,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
                     song.artist,
                     style = BeezeType.caption,
-                    color = Color(0xFF666666),
+                    color = BeezeColors.MiniPlayerArtist,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
             Image(
                 painter = painterResource(if (isPlaying) R.drawable.ic_pause_mini else R.drawable.ic_play_mini),
-                contentDescription = if (isPlaying) "暂停" else "播放",
+                contentDescription = tr(if (isPlaying) R.string.pause else R.string.play),
+                colorFilter = themeIconTint(),
                 modifier = Modifier
                     .size(24.dp)
                     .iconClickable(onClick = onTogglePlay),
@@ -746,7 +866,8 @@ internal fun MiniPlayer(
             Spacer(Modifier.width(12.dp))
             Image(
                 painter = painterResource(R.drawable.ic_playlist_mini),
-                contentDescription = "播放列表",
+                contentDescription = tr(R.string.queue),
+                colorFilter = themeIconTint(BeezeColors.MiniPlayerArtist),
                 modifier = Modifier
                     .size(24.dp)
                     .iconClickable(onClick = onShowQueue),

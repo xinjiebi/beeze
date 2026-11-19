@@ -91,8 +91,9 @@ internal fun ForYouContent(viewModel: PlayerViewModel, isPageSettled: Boolean) {
 
     // Featured 刷新由 ViewModel 在冷启动媒体库加载时触发，进页不刷新
 
+    val recentlyPlayedTitle = tr(R.string.recently_played)
     val openSongList: (String, List<Song>) -> Unit = { title, list ->
-        if (list.isEmpty()) showToast(context, "还没有内容")
+        if (list.isEmpty()) showToast(context, context.getString(R.string.no_content_yet))
         else viewModel.openDetail(DetailPage.SongList(title, list.map { it.id }, sortable = false))
     }
     val openEntry: (EntryKind, List<Song>) -> Unit = { kind, list ->
@@ -125,7 +126,7 @@ internal fun ForYouContent(viewModel: PlayerViewModel, isPageSettled: Boolean) {
                 isActivePage = isActivePage,
                 onPlay = { viewModel.playSongs(recentSongs, it, openPlayer = true) },
                 onPlayAll = { viewModel.playSongs(recentSongs, 0) },
-                onOpenAll = { openSongList("Recently played", recentSongs) },
+                onOpenAll = { openSongList(recentlyPlayedTitle, recentSongs) },
             )
         }
         if (featuredSongs.isNotEmpty()) {
@@ -148,7 +149,7 @@ internal fun ForYouContent(viewModel: PlayerViewModel, isPageSettled: Boolean) {
         if (songs.isEmpty()) {
             Spacer(Modifier.height(48.dp))
             Text(
-                "本机暂无音频文件",
+                tr(R.string.no_audio_files),
                 style = BeezeType.bodyMd,
                 color = BeezeColors.Muted,
                 modifier = Modifier.fillMaxWidth(),
@@ -189,7 +190,7 @@ private fun CardsRow(
             val labelSong = covers.lyric ?: lyricSongs.first()
             EntryCard(
                 width = 183.dp,
-                gradient = listOf(Color(0xFF07BA9A), Color(0xFFA135FF)),
+                gradient = listOf(BeezeColors.LyricCardStart, BeezeColors.LyricCardEnd),
                 gradientStart = Offset(0f, 1f), // 132deg：左下青绿 → 右上紫
                 gradientEnd = Offset(1f, 0f),
                 line1 = "${labelSong.title} - ${labelSong.artist}",
@@ -201,10 +202,10 @@ private fun CardsRow(
         }
         EntryCard(
             width = 128.dp,
-            gradient = listOf(Color(0xFFCE0CB7), Color(0xFFF0C63E)),
+            gradient = listOf(BeezeColors.LikedCardStart, BeezeColors.LikedCardEnd),
             gradientStart = Offset.Zero, // 55deg：左上品红 → 右下黄
             gradientEnd = Offset(1f, 1f),
-            line1 = "Liked",
+            line1 = tr(R.string.entry_liked),
             songCount = likedSongs.size,
             cover = covers.liked,
             onClick = { onOpenEntry(EntryKind.Liked, likedSongs) },
@@ -212,10 +213,10 @@ private fun CardsRow(
         )
         EntryCard(
             width = 128.dp,
-            gradient = listOf(Color(0xFF7313D2), Color(0xFF2898E9)),
+            gradient = listOf(BeezeColors.ShuffleCardStart, BeezeColors.ShuffleCardEnd),
             gradientStart = Offset.Zero, // 52deg：左上紫 → 右下蓝
             gradientEnd = Offset(1f, 1f),
-            line1 = "Shuffle Play",
+            line1 = tr(R.string.shuffle_play),
             songCount = shuffleCount,
             cover = covers.shuffle,
             onClick = onShuffle,
@@ -223,10 +224,10 @@ private fun CardsRow(
         if (mostPlayedSongs.isNotEmpty()) {
             EntryCard(
                 width = 128.dp,
-                gradient = listOf(Color(0xFF18B110), Color(0xFF1BA8EE)),
+                gradient = listOf(BeezeColors.MostPlayedCardStart, BeezeColors.MostPlayedCardEnd),
                 gradientStart = Offset.Zero, // 51deg：左上绿 → 右下蓝
                 gradientEnd = Offset(1f, 1f),
-                line1 = "Most Played",
+                line1 = tr(R.string.entry_most_played),
                 songCount = mostPlayedSongs.size,
                 cover = covers.mostPlayed,
                 onClick = { onOpenEntry(EntryKind.MostPlayed, mostPlayedSongs) },
@@ -290,7 +291,7 @@ private fun EntryCard(
                         Modifier
                             .size(68.dp)
                             .clip(RoundedCornerShape(4.dp))
-                            .background(Color.White.copy(alpha = 0.2f))
+                            .background(BeezeColors.OnGradient.copy(alpha = 0.2f))
                     )
                 },
             )
@@ -313,16 +314,16 @@ private fun EntryCard(
                     fontWeight = FontWeight.Bold,
                     lineHeight = 18.sp,
                     letterSpacing = 0.5.sp,
-                    color = Color.White,
+                    color = BeezeColors.OnGradient,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
                 Text(
-                    "$songCount songs",
+                    songsCount(songCount),
                     fontSize = 12.sp,
                     lineHeight = 18.sp,
                     letterSpacing = 0.3.sp,
-                    color = Color.White.copy(alpha = 0.65f),
+                    color = BeezeColors.OnGradient.copy(alpha = 0.65f),
                     maxLines = 1,
                 )
             }
@@ -336,18 +337,18 @@ private fun EntryCard(
 private fun LyricSyncTopLabel() {
     Column(Modifier.padding(start = 8.dp, top = 11.dp)) {
         Text(
-            "Lyric",
+            tr(R.string.lyric),
             fontSize = 16.sp,
             fontWeight = FontWeight.Bold,
             lineHeight = 22.4.sp,
-            color = Color.White.copy(alpha = 0.6f),
+            color = BeezeColors.OnGradient.copy(alpha = 0.6f),
         )
         Text(
-            "Sync",
+            tr(R.string.sync),
             fontSize = 16.sp,
             fontWeight = FontWeight.Bold,
             lineHeight = 22.4.sp,
-            color = Color.White.copy(alpha = 0.6f),
+            color = BeezeColors.OnGradient.copy(alpha = 0.6f),
             modifier = Modifier.padding(start = 28.dp),
         )
     }
@@ -364,7 +365,7 @@ private fun BoxScope.LikedDefaultCover() {
             .clip(RoundedCornerShape(4.dp))
             .background(
                 Brush.linearGradient(
-                    listOf(Color(0xFFE237A6), Color(0xFFEBB470)),
+                    listOf(BeezeColors.LikedCoverStart, BeezeColors.LikedCoverEnd),
                     start = Offset.Zero,
                     end = Offset.Infinite, // 142deg：左上粉 → 右下浅橙
                 )
@@ -392,8 +393,8 @@ private fun BoxScope.LikedDefaultCover() {
             drawPath(
                 heart,
                 Brush.linearGradient(
-                    0f to Color.White.copy(alpha = 0.5f),
-                    1f to Color.White.copy(alpha = 0f),
+                    0f to BeezeColors.OnGradient.copy(alpha = 0.5f),
+                    1f to BeezeColors.OnGradient.copy(alpha = 0f),
                     start = Offset(x(33f), y(-2f)),
                     end = Offset(x(4.5f), y(33f)),
                 )
@@ -406,22 +407,22 @@ private fun BoxScope.LikedDefaultCover() {
 @Composable
 private fun CdDisc() {
     Canvas(Modifier.fillMaxSize()) {
-        val color = Color(0xFF1C1C1E).copy(alpha = 0.7f)
+        val color = BeezeColors.Disc.copy(alpha = 0.7f)
         val radius = size.minDimension / 2f
         drawCircle(color, radius)
         // 纹路圈
         drawCircle(
-            Color.White.copy(alpha = 0.15f),
+            BeezeColors.OnGradient.copy(alpha = 0.15f),
             radius * 0.72f,
             style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1f),
         )
         drawCircle(
-            Color.White.copy(alpha = 0.15f),
+            BeezeColors.OnGradient.copy(alpha = 0.15f),
             radius * 0.5f,
             style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1f),
         )
         // 中心孔
-        drawCircle(Color.White.copy(alpha = 0.35f), radius * 0.14f)
+        drawCircle(BeezeColors.OnGradient.copy(alpha = 0.35f), radius * 0.14f)
     }
 }
 
@@ -432,11 +433,11 @@ private fun WhitePlayPill() {
         Modifier
             .size(24.dp, 18.dp)
             .clip(RoundedCornerShape(9.dp))
-            .background(Color.White.copy(alpha = 0.2f)),
+            .background(BeezeColors.OnGradient.copy(alpha = 0.2f)),
         contentAlignment = Alignment.Center,
     ) {
         Canvas(Modifier.fillMaxSize()) {
-            drawPath(playTriangle(size), Color.White.copy(alpha = 0.85f))
+            drawPath(playTriangle(size), BeezeColors.OnGradient.copy(alpha = 0.85f))
         }
     }
 }
@@ -477,15 +478,16 @@ private fun SectionTitle(
 /** 黑色圆角胶囊播放钮（Recently played / Featured 标题用） */
 @Composable
 private fun BlackPlayPill(width: Dp, height: Dp, onClick: (() -> Unit)?) {
+    val iconColor = BeezeColors.SectionPlayIcon
     Box(
         Modifier
             .size(width, height)
             .clip(RoundedCornerShape(height / 2))
-            .background(BeezeColors.Ink)
+            .background(BeezeColors.SectionPlayBackground)
             .then(if (onClick != null) Modifier.iconClickable(onClick = onClick) else Modifier),
         contentAlignment = Alignment.Center,
     ) {
-        Canvas(Modifier.fillMaxSize()) { drawPath(playTriangle(size), Color.White) }
+        Canvas(Modifier.fillMaxSize()) { drawPath(playTriangle(size), iconColor) }
     }
 }
 
@@ -525,13 +527,14 @@ private fun RecentlyPlayedSection(
         if (isActivePage) listState.scrollToItem(0)
     }
     SectionTitle(
-        title = "Recently played",
+        title = tr(R.string.recently_played),
         showPlayPill = true,
         onPlayClick = onPlayAll,
         action = {
             Image(
                 painter = painterResource(R.drawable.ic_chevron_right),
-                contentDescription = "查看全部",
+                contentDescription = tr(R.string.view_all),
+                colorFilter = themeIconTint(),
                 modifier = Modifier
                     .size(24.dp)
                     .iconClickable(onClick = onOpenAll),
@@ -576,7 +579,7 @@ private fun RecentlyPlayedSection(
 @Composable
 private fun FeaturedSection(songs: List<Song>, onPlay: (Int) -> Unit, onPlayAll: () -> Unit) {
     SectionTitle(
-        title = "Featured",
+        title = tr(R.string.featured),
         showPlayPill = true,
         onPlayClick = onPlayAll,
     )
@@ -648,11 +651,12 @@ private fun PlaylistSection(
     val songById = remember(songs) { songs.associateBy { it.id } }
 
     SectionTitle(
-        title = "Playlist  (${playlists.size})",
+        title = tr(R.string.playlist_count, playlists.size),
         action = {
             Image(
                 painter = painterResource(R.drawable.ic_add),
-                contentDescription = "新建歌单",
+                contentDescription = tr(R.string.new_playlist),
+                colorFilter = themeIconTint(),
                 modifier = Modifier
                     .size(24.dp)
                     .iconClickable { showCreateDialog = true },
@@ -683,7 +687,7 @@ private fun PlaylistSection(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        if (expanded) "Collapse" else "View All Playlists",
+                        tr(if (expanded) R.string.collapse else R.string.view_all_playlists),
                         style = BeezeType.caption,
                         color = BeezeColors.Muted,
                     )
@@ -691,6 +695,7 @@ private fun PlaylistSection(
                     Image(
                         painter = painterResource(R.drawable.ic_unfold),
                         contentDescription = null,
+                        colorFilter = themeIconTint(BeezeColors.Muted),
                         modifier = Modifier
                             .size(14.dp)
                             .rotate(if (expanded) 180f else 0f),
@@ -739,7 +744,7 @@ internal fun CreatePlaylistRow(onClick: () -> Unit, verticalPadding: Dp = 8.dp) 
         }
         Spacer(Modifier.width(8.dp))
         Text(
-            "Create Playlist",
+            tr(R.string.create_playlist),
             style = BeezeType.button,
             color = BeezeColors.Muted,
         )
@@ -784,10 +789,8 @@ internal fun PlaylistRow(playlist: Playlist, firstSong: Song?, onClick: () -> Un
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            val subtitle = buildString {
-                append("${playlist.songIds.size} songs")
-                firstSong?.let { append(" · ${it.title}·${it.artist}") }
-            }
+            val subtitle = songsCount(playlist.songIds.size) +
+                (firstSong?.let { " · ${it.title}·${it.artist}" } ?: "")
             Text(
                 subtitle,
                 style = BeezeType.caption,
@@ -804,9 +807,9 @@ internal fun PlaylistRow(playlist: Playlist, firstSong: Song?, onClick: () -> Un
 internal fun CreatePlaylistDialog(
     onDismiss: () -> Unit,
     onConfirm: (String) -> Unit,
-    title: String = "Create playlist",
+    title: String = tr(R.string.create_playlist),
     initialName: String = "",
-    confirmLabel: String = "Create",
+    confirmLabel: String = tr(R.string.create),
 ) {
     var name by remember { mutableStateOf(initialName) }
     val focusRequester = remember { FocusRequester() }
@@ -849,7 +852,7 @@ internal fun CreatePlaylistDialog(
                     Box(contentAlignment = Alignment.CenterStart) {
                         if (name.isEmpty()) {
                             Text(
-                                "Playlist name",
+                                tr(R.string.playlist_name),
                                 style = BeezeType.bodyMd,
                                 color = BeezeColors.Muted,
                             )
@@ -863,7 +866,7 @@ internal fun CreatePlaylistDialog(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Text(
-                    "Cancel",
+                    tr(R.string.cancel),
                     style = BeezeType.button.copy(fontWeight = FontWeight.Normal),
                     color = BeezeColors.Muted,
                     textAlign = androidx.compose.ui.text.style.TextAlign.Center,

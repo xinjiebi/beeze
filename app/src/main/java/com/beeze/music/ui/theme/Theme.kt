@@ -1,26 +1,16 @@
 package com.beeze.music.ui.theme
 
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.graphics.Color
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
-
-/** 设计稿颜色 Tokens */
-object BeezeColors {
-    val Primary = Color(0xFFA135FF)
-    val PrimarySubtle = Color(0xFFE7DAF3)
-    val Ink = Color(0xFF1C1C1E)
-    val Body = Color(0xFF3A3A3C)
-    val Muted = Color(0xFF8E8E93)
-    val Surface = Color(0xFFFFFFFF)
-    val Canvas = Color(0xFFF7F7F5)
-    val SurfaceSoft = Color(0xFFF0F0ED)
-    val Hairline = Color(0xFFE5E5E0)
-}
 
 /** 设计稿字体 Tokens（Noto Sans SC 以系统默认字体族加字重代替） */
 object BeezeType {
@@ -90,16 +80,41 @@ object BeezeType {
     )
 }
 
-private val BeezeColorScheme = lightColorScheme(
-    primary = BeezeColors.Primary,
-    background = BeezeColors.SurfaceSoft,
-    surface = BeezeColors.Surface,
-    onBackground = BeezeColors.Ink,
-    onSurface = BeezeColors.Ink,
-)
+val LocalBeezeDarkTheme = compositionLocalOf { false }
 
 @Composable
-fun BeezeTheme(content: @Composable () -> Unit) {
-    // Material3 仅作基础，UI 颜色与字体均按设计稿定制
-    MaterialTheme(colorScheme = BeezeColorScheme, content = content)
+fun BeezeTheme(darkTheme: Boolean = isSystemInDarkTheme(), content: @Composable () -> Unit) {
+    val colors = if (darkTheme) BeezeDarkColors else BeezeLightColors
+    val materialColors = if (darkTheme) {
+        darkColorScheme(
+            primary = colors.Primary,
+            onPrimary = colors.OnGradient,
+            primaryContainer = colors.PrimarySubtle,
+            onPrimaryContainer = colors.Ink,
+            background = colors.SurfaceSoft,
+            onBackground = colors.Ink,
+            surface = colors.Surface,
+            onSurface = colors.Ink,
+            surfaceVariant = colors.Canvas,
+            onSurfaceVariant = colors.Body,
+            outline = colors.Hairline,
+        )
+    } else {
+        lightColorScheme(
+            primary = colors.Primary,
+            onPrimary = colors.OnGradient,
+            primaryContainer = colors.PrimarySubtle,
+            onPrimaryContainer = colors.Ink,
+            background = colors.SurfaceSoft,
+            onBackground = colors.Ink,
+            surface = colors.Surface,
+            onSurface = colors.Ink,
+            surfaceVariant = colors.Canvas,
+            onSurfaceVariant = colors.Body,
+            outline = colors.Hairline,
+        )
+    }
+    CompositionLocalProvider(LocalBeezeColors provides colors, LocalBeezeDarkTheme provides darkTheme) {
+        MaterialTheme(colorScheme = materialColors, content = content)
+    }
 }

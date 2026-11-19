@@ -57,17 +57,18 @@ import com.beeze.music.R
 import com.beeze.music.data.LyricsRepository
 import com.beeze.music.ui.theme.BeezeColors
 import com.beeze.music.ui.theme.BeezeType
+import com.beeze.music.ui.theme.LocalBeezeDarkTheme
 import com.syncedlyrics.sdk.SyncedLyricsView
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 
-/** 播放页暗色模式配色（歌词背景偏暗，不走 light 模式） */
-private val OnDark = Color(0xFFFFFFFF)           // 主文字/图标
-private val OnDarkDim = Color(0xB3FFFFFF)        // 次要文字 70%
-private val OnDarkFaint = Color(0x8CFFFFFF)      // 弱图标 55%
-private val OnDarkTrack = Color(0x40FFFFFF)      // 进度轨道 25%
-private val OnDarkAccent = Color(0xFFC98AFF)     // 暗底上的强调紫（比 primary 浅）
+/** 播放页始终使用歌词暗底配色，不随普通页面切换。 */
+private val OnDark @Composable get() = BeezeColors.PlayerText
+private val OnDarkDim @Composable get() = BeezeColors.PlayerTextDim
+private val OnDarkFaint @Composable get() = BeezeColors.PlayerIconFaint
+private val OnDarkTrack @Composable get() = BeezeColors.PlayerTrack
+private val OnDarkAccent @Composable get() = BeezeColors.PlayerAccent
 
 class PlayerContentCache {
     var loadedSongId: Long? = null
@@ -150,14 +151,15 @@ fun PlayerScreen(
     }
 
     // 播放页暗色背景：状态栏/手势条图标切浅色，离开恢复
-    DisposableEffect(Unit) {
+    val darkTheme = LocalBeezeDarkTheme.current
+    DisposableEffect(darkTheme) {
         val window = (context as? ComponentActivity)?.window
         val controller = window?.let { WindowCompat.getInsetsController(it, it.decorView) }
         controller?.isAppearanceLightStatusBars = false
         controller?.isAppearanceLightNavigationBars = false
         onDispose {
-            controller?.isAppearanceLightStatusBars = true
-            controller?.isAppearanceLightNavigationBars = true
+            controller?.isAppearanceLightStatusBars = !darkTheme
+            controller?.isAppearanceLightNavigationBars = !darkTheme
         }
     }
 
@@ -172,8 +174,8 @@ fun PlayerScreen(
                 .height(140.dp)
                 .background(
                     Brush.verticalGradient(
-                        0f to Color.Black.copy(alpha = 0.38f),
-                        1f to Color.Transparent,
+                        0f to BeezeColors.PlayerShade.copy(alpha = 0.38f),
+                        1f to BeezeColors.Transparent,
                     )
                 )
         )
@@ -186,9 +188,9 @@ fun PlayerScreen(
                 .align(Alignment.BottomCenter)
                 .background(
                     Brush.verticalGradient(
-                        0f to Color.Transparent,
-                        0.5f to Color.Black.copy(alpha = 0.30f),
-                        1f to Color.Black.copy(alpha = 0.68f),
+                        0f to BeezeColors.Transparent,
+                        0.5f to BeezeColors.PlayerShade.copy(alpha = 0.30f),
+                        1f to BeezeColors.PlayerShade.copy(alpha = 0.68f),
                     )
                 )
         )
@@ -209,7 +211,7 @@ fun PlayerScreen(
             ) {
                 Image(
                     painter = painterResource(R.drawable.ic_unfold),
-                    contentDescription = "返回",
+                    contentDescription = tr(R.string.back),
                     colorFilter = ColorFilter.tint(OnDark),
                     modifier = Modifier
                         .size(24.dp)
@@ -284,7 +286,7 @@ fun PlayerScreen(
                 val liked = song.id in likedIds
                 PlayerActionIcon(
                     iconRes = if (liked) R.drawable.ic_like_filled else R.drawable.ic_like,
-                    label = "喜欢",
+                    label = tr(R.string.like),
                     tint = if (liked) OnDarkAccent else OnDark,
                     onClick = { viewModel.toggleLike(song.id) },
                 )
@@ -306,11 +308,11 @@ fun PlayerScreen(
                         )
                     }
                 } else {
-                    PlayerActionIcon(R.drawable.ic_timer, "定时") { sleepTimerOpen = true }
+                    PlayerActionIcon(R.drawable.ic_timer, tr(R.string.sleep_timer)) { sleepTimerOpen = true }
                 }
-                PlayerActionIcon(R.drawable.ic_add_playlist, "添加到歌单") { addPlaylistOpen = true }
-                PlayerActionIcon(R.drawable.ic_lyrics, "歌词") { lyricEffectsOpen = true }
-                PlayerActionIcon(R.drawable.ic_player_more, "更多") { moreOpen = true }
+                PlayerActionIcon(R.drawable.ic_add_playlist, tr(R.string.add_to_playlist)) { addPlaylistOpen = true }
+                PlayerActionIcon(R.drawable.ic_lyrics, tr(R.string.lyric_effects)) { lyricEffectsOpen = true }
+                PlayerActionIcon(R.drawable.ic_player_more, tr(R.string.more)) { moreOpen = true }
             }
 
             Spacer(Modifier.weight(24f))
@@ -348,9 +350,9 @@ fun PlayerScreen(
                         }
                     ),
                     contentDescription = when (playMode) {
-                        PlayMode.RepeatAll -> "列表循环"
-                        PlayMode.RepeatOne -> "单曲循环"
-                        PlayMode.Shuffle -> "随机播放"
+                        PlayMode.RepeatAll -> tr(R.string.repeat_all)
+                        PlayMode.RepeatOne -> tr(R.string.repeat_one)
+                        PlayMode.Shuffle -> tr(R.string.shuffle)
                     },
                     // 三态仅切换图标，不做选中高亮
                     colorFilter = ColorFilter.tint(OnDark),
@@ -360,7 +362,7 @@ fun PlayerScreen(
                 )
                 Image(
                     painter = painterResource(R.drawable.ic_prev),
-                    contentDescription = "上一首",
+                    contentDescription = tr(R.string.previous),
                     colorFilter = ColorFilter.tint(OnDark),
                     modifier = Modifier
                         .size(32.dp)
@@ -371,14 +373,14 @@ fun PlayerScreen(
                         if (isPlaying) R.drawable.ic_player_pause_on_dark
                         else R.drawable.ic_player_play_on_dark
                     ),
-                    contentDescription = if (isPlaying) "暂停" else "播放",
+                    contentDescription = tr(if (isPlaying) R.string.pause else R.string.play),
                     modifier = Modifier
                         .size(48.dp)
                         .iconClickable(onClick = viewModel::togglePlayPause),
                 )
                 Image(
                     painter = painterResource(R.drawable.ic_next),
-                    contentDescription = "下一首",
+                    contentDescription = tr(R.string.next),
                     colorFilter = ColorFilter.tint(OnDark),
                     modifier = Modifier
                         .size(32.dp)
@@ -386,7 +388,7 @@ fun PlayerScreen(
                 )
                 Image(
                     painter = painterResource(R.drawable.ic_playlist_player),
-                    contentDescription = "播放列表",
+                    contentDescription = tr(R.string.queue),
                     colorFilter = ColorFilter.tint(OnDark),
                     modifier = Modifier
                         .size(32.dp)

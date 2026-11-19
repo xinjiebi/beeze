@@ -111,8 +111,10 @@ class PlaylistStore(context: Context) {
         playlists = playlists.map { playlist ->
             playlist.copy(songIds = playlist.songIds.filterNot { it in songIds })
         }
-        save()
     }
+
+    @Synchronized
+    fun persist() = save()
 
     /** 保存歌单内完整顺序 */
     @Synchronized

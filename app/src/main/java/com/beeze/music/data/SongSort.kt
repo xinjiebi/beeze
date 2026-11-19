@@ -7,13 +7,8 @@ enum class SongSortScope {
     Songs, Folder, Album, Artist, Entry, Generic,
 }
 
-enum class SongSortOption(val label: String) {
-    Default("Default"),
-    TitleAsc("Title A–Z"),
-    TitleDesc("Title Z–A"),
-    ArtistAsc("Artist A–Z"),
-    RecentlyAdded("Recently added"),
-    DurationDesc("Duration: longest first"),
+enum class SongSortOption {
+    Default, TitleAsc, TitleDesc, ArtistAsc, RecentlyAdded, DurationDesc,
 }
 
 class SongSortStore(context: Context) {

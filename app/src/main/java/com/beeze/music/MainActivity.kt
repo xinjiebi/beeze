@@ -2,6 +2,7 @@ package com.beeze.music
 
 import android.Manifest
 import android.app.Dialog
+import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -14,6 +15,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -31,9 +33,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
@@ -49,6 +54,8 @@ import androidx.lifecycle.setViewTreeViewModelStoreOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import coil.Coil
 import coil.ImageLoader
+import com.beeze.music.data.AppLocale
+import com.beeze.music.data.AppearanceMode
 import com.beeze.music.data.SongArtworkFetcher
 import com.beeze.music.ui.HomeScreen
 import com.beeze.music.ui.DetailScreen
@@ -59,7 +66,9 @@ import com.beeze.music.ui.PlayerContentCache
 import com.beeze.music.ui.PlayerScreen
 import com.beeze.music.ui.QueueSheet
 import com.beeze.music.ui.SearchScreen
+import com.beeze.music.ui.tr
 import com.beeze.music.ui.theme.BeezeColors
+import com.beeze.music.ui.theme.BeezeLightColors
 import com.beeze.music.ui.theme.BeezeTheme
 import com.beeze.music.ui.theme.BeezeType
 import com.syncedlyrics.sdk.SyncedLyricsView
@@ -67,6 +76,10 @@ import com.syncedlyrics.sdk.SyncedLyricsView
 class MainActivity : ComponentActivity() {
 
     private val viewModel: PlayerViewModel by viewModels()
+
+    override fun attachBaseContext(newBase: Context) {
+        super.attachBaseContext(AppLocale.wrap(newBase))
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -84,14 +97,22 @@ class MainActivity : ComponentActivity() {
             window.isNavigationBarContrastEnforced = false
         }
         @Suppress("DEPRECATION")
-        window.navigationBarColor = android.graphics.Color.TRANSPARENT
+        window.navigationBarColor = BeezeLightColors.Transparent.toArgb()
+        val darkTheme = resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK ==
+            android.content.res.Configuration.UI_MODE_NIGHT_YES
         WindowCompat.getInsetsController(window, window.decorView).apply {
-            isAppearanceLightStatusBars = true
-            isAppearanceLightNavigationBars = true
+            isAppearanceLightStatusBars = !darkTheme
+            isAppearanceLightNavigationBars = !darkTheme
         }
         setContent {
-            BeezeTheme {
-                BeezeApp(viewModel)
+            val appearance by viewModel.appearanceMode.collectAsStateWithLifecycle()
+            val darkTheme = when (appearance) {
+                AppearanceMode.SYSTEM -> isSystemInDarkTheme()
+                AppearanceMode.LIGHT -> false
+                AppearanceMode.DARK -> true
+            }
+            BeezeTheme(darkTheme = darkTheme) {
+                BeezeApp(viewModel, darkTheme)
             }
         }
     }
@@ -99,10 +120,18 @@ class MainActivity : ComponentActivity() {
 
 /** 根组合：按权限与界面状态切换主页、搜索、扫描管理、详情、播放器与权限引导 */
 @Composable
-fun BeezeApp(viewModel: PlayerViewModel) {
+fun BeezeApp(viewModel: PlayerViewModel, darkTheme: Boolean) {
     val context = LocalContext.current
     val hasPermission by viewModel.hasPermission.collectAsStateWithLifecycle()
     val screen by viewModel.screen.collectAsStateWithLifecycle()
+    DisposableEffect(darkTheme) {
+        val activity = context as ComponentActivity
+        WindowCompat.getInsetsController(activity.window, activity.window.decorView).apply {
+            isAppearanceLightStatusBars = !darkTheme
+            isAppearanceLightNavigationBars = !darkTheme
+        }
+        onDispose { }
+    }
     val detailPage by viewModel.detail.collectAsStateWithLifecycle()
     val searchOpen by viewModel.searchOpen.collectAsStateWithLifecycle()
     val scanOpen by viewModel.scanOpen.collectAsStateWithLifecycle()
@@ -132,6 +161,7 @@ fun BeezeApp(viewModel: PlayerViewModel) {
 
     // 启动时与每次回到前台都重新检查授权（用户可能刚从设置页开完开关返回）
     val lifecycleOwner = LocalLifecycleOwner.current
+    var initialPermissionCheck by remember { mutableStateOf(true) }
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
@@ -144,11 +174,12 @@ fun BeezeApp(viewModel: PlayerViewModel) {
                     ) == PackageManager.PERMISSION_GRANTED
                 }
                 if (granted != viewModel.hasPermission.value) {
-                    viewModel.onPermissionResult(granted)
+                    viewModel.onPermissionResult(granted, initialCheck = initialPermissionCheck)
                     if (granted && Build.VERSION.SDK_INT >= 33) {
                         notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                     }
                 }
+                initialPermissionCheck = false
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -174,7 +205,11 @@ fun BeezeApp(viewModel: PlayerViewModel) {
     val queueOpen by viewModel.queueOpen.collectAsStateWithLifecycle()
 
     // 播放器使用独立原生窗口，整体从底部拉起；下层主页保持原状态
-    PlayerOverlay(visible = screen == AppScreen.Player, onDismiss = viewModel::closePlayer) {
+    PlayerOverlay(
+        visible = screen == AppScreen.Player,
+        darkTheme = darkTheme,
+        onDismiss = viewModel::closePlayer,
+    ) {
         Box(Modifier.fillMaxSize()) {
             PlayerScreen(
                 viewModel = viewModel,
@@ -194,15 +229,20 @@ fun BeezeApp(viewModel: PlayerViewModel) {
 
 /** 由系统窗口动画统一移动歌词背景和 Compose 控件，避免两层绘制错位。 */
 @Composable
-private fun PlayerOverlay(visible: Boolean, onDismiss: () -> Unit, content: @Composable () -> Unit) {
+private fun PlayerOverlay(
+    visible: Boolean,
+    darkTheme: Boolean,
+    onDismiss: () -> Unit,
+    content: @Composable () -> Unit,
+) {
     if (!visible) return
     val activity = LocalContext.current as ComponentActivity
-    DisposableEffect(Unit) {
+    DisposableEffect(darkTheme) {
         val composeView = ComposeView(activity).apply {
             setViewTreeLifecycleOwner(activity)
             setViewTreeViewModelStoreOwner(activity)
             setViewTreeSavedStateRegistryOwner(activity)
-            setContent { content() }
+            setContent { BeezeTheme(darkTheme = darkTheme) { content() } }
         }
         val dialog = Dialog(activity, R.style.BeezePlayerDialog).apply {
             setContentView(composeView)
@@ -220,8 +260,8 @@ private fun PlayerOverlay(visible: Boolean, onDismiss: () -> Unit, content: @Com
         dialog.window?.setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
         onDispose {
             WindowCompat.getInsetsController(activity.window, activity.window.decorView).apply {
-                isAppearanceLightStatusBars = true
-                isAppearanceLightNavigationBars = true
+                isAppearanceLightStatusBars = !darkTheme
+                isAppearanceLightNavigationBars = !darkTheme
             }
             dialog.dismiss()
         }
@@ -244,15 +284,14 @@ private fun PermissionGuide(onRequest: () -> Unit) {
             modifier = Modifier.padding(horizontal = 32.dp),
         ) {
             Text(
-                "需要「所有文件」访问权限",
+                tr(R.string.permission_title),
                 style = BeezeType.displayMd,
                 color = BeezeColors.Ink,
                 textAlign = TextAlign.Center,
             )
             Spacer(Modifier.height(12.dp))
             Text(
-                "用于扫描本机音乐与歌词（.lrc）文件。\n" +
-                    "点击按钮跳转系统设置，打开「允许访问所有文件」开关后返回即可。",
+                tr(R.string.permission_message),
                 style = BeezeType.bodyMd,
                 color = BeezeColors.Muted,
                 textAlign = TextAlign.Center,
@@ -263,7 +302,7 @@ private fun PermissionGuide(onRequest: () -> Unit) {
                 shape = RoundedCornerShape(24.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = BeezeColors.Primary),
             ) {
-                Text("去授权", style = BeezeType.button, color = BeezeColors.Surface)
+                Text(tr(R.string.authorize), style = BeezeType.button, color = BeezeColors.Surface)
             }
         }
     }

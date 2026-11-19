@@ -20,7 +20,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
@@ -29,6 +28,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.beeze.music.PlayerViewModel
+import com.beeze.music.R
 import com.beeze.music.data.SongSortOption
 import com.beeze.music.data.SongSortScope
 import com.beeze.music.ui.theme.BeezeColors
@@ -44,7 +44,7 @@ fun SortSheet(viewModel: PlayerViewModel, scope: SongSortScope, onDismiss: () ->
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         containerColor = BeezeColors.Surface,
-        scrimColor = Color.Black.copy(alpha = 0.65f),
+        scrimColor = BeezeColors.Scrim,
         shape = RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp),
         dragHandle = {
             Box(
@@ -62,7 +62,7 @@ fun SortSheet(viewModel: PlayerViewModel, scope: SongSortScope, onDismiss: () ->
     ) {
         Column(Modifier.fillMaxWidth().padding(bottom = 24.dp)) {
             Text(
-                "Sort by",
+                tr(R.string.sort_by),
                 style = BeezeType.button.copy(fontWeight = FontWeight.Bold),
                 color = BeezeColors.Body,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
@@ -80,7 +80,7 @@ fun SortSheet(viewModel: PlayerViewModel, scope: SongSortScope, onDismiss: () ->
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        option.label,
+                        sortOptionLabel(option),
                         style = BeezeType.bodyMd,
                         color = if (option == selected) BeezeColors.Primary else BeezeColors.Body,
                         modifier = Modifier.weight(1f),
@@ -98,6 +98,7 @@ fun SortSheet(viewModel: PlayerViewModel, scope: SongSortScope, onDismiss: () ->
 
 @Composable
 private fun SortCheckmark() {
+    val primary = BeezeColors.Primary
     Canvas(Modifier.size(24.dp)) {
         val unit = size.width / 24f
         val path = Path().apply {
@@ -107,7 +108,7 @@ private fun SortCheckmark() {
         }
         drawPath(
             path,
-            BeezeColors.Primary,
+            primary,
             style = Stroke(
                 width = 1.75f * unit,
                 cap = StrokeCap.Round,

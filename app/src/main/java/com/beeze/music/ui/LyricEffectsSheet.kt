@@ -29,11 +29,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.beeze.music.R
 import com.beeze.music.ui.theme.BeezeColors
 import com.beeze.music.ui.theme.BeezeType
+import com.syncedlyrics.sdk.BackgroundStyle
+import com.syncedlyrics.sdk.LyricStyle
 import com.syncedlyrics.sdk.SyncedLyricsView
 
-/** 与播放列表共用白色底部弹层、圆角、拖拽把手和 75% 高度。 */
+/** 与播放列表共用主题色底部弹层、圆角、拖拽把手和 75% 高度。 */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LyricEffectsSheet(lyricView: SyncedLyricsView, onDismiss: () -> Unit) {
@@ -57,13 +60,13 @@ fun LyricEffectsSheet(lyricView: SyncedLyricsView, onDismiss: () -> Unit) {
     ) {
         Column(Modifier.fillMaxWidth().fillMaxHeight(0.75f)) {
             Box(Modifier.fillMaxWidth().height(48.dp).padding(horizontal = 20.dp), contentAlignment = Alignment.CenterStart) {
-                Text("歌词效果", style = BeezeType.bodySm, color = BeezeColors.Ink)
+                Text(tr(R.string.lyric_effects), style = BeezeType.bodySm, color = BeezeColors.Ink)
             }
             Column(
                 modifier = Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState())
                     .padding(horizontal = 20.dp),
             ) {
-                Text("歌词动画", style = BeezeType.bodySm.copy(fontWeight = FontWeight.Medium), color = BeezeColors.Muted)
+                Text(tr(R.string.lyric_animation), style = BeezeType.bodySm.copy(fontWeight = FontWeight.Medium), color = BeezeColors.Muted)
                 Spacer(Modifier.height(12.dp))
                 EffectGrid(
                     options = LyricThemes.modes,
@@ -75,7 +78,7 @@ fun LyricEffectsSheet(lyricView: SyncedLyricsView, onDismiss: () -> Unit) {
                     },
                 )
                 Spacer(Modifier.height(28.dp))
-                Text("背景效果", style = BeezeType.bodySm.copy(fontWeight = FontWeight.Medium), color = BeezeColors.Muted)
+                Text(tr(R.string.background_effects), style = BeezeType.bodySm.copy(fontWeight = FontWeight.Medium), color = BeezeColors.Muted)
                 Spacer(Modifier.height(12.dp))
                 EffectGrid(
                     options = LyricThemes.backgrounds,
@@ -107,7 +110,11 @@ private fun <T> EffectGrid(options: List<T>, selected: T, onSelect: (T) -> Unit)
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
-                            option.name.lowercase().replaceFirstChar { it.uppercase() },
+                            when (option) {
+                                is LyricStyle -> lyricStyleLabel(option)
+                                is BackgroundStyle -> backgroundStyleLabel(option)
+                                else -> option.name
+                            },
                             style = BeezeType.bodySm.copy(fontWeight = if (isSelected) FontWeight.Medium else FontWeight.Normal),
                             color = if (isSelected) BeezeColors.Primary else BeezeColors.Body,
                         )

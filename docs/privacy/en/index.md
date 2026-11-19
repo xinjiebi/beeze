@@ -37,7 +37,8 @@ All of this processing takes place locally on your device and does not mean that
 ## 2. Data Storage and Uploads
 
 - Songs, lyrics, artwork, listening history, liked songs, custom playlists, and scan exclusion records are stored only on your device.
-- The current version of Beeze **does not request Android’s INTERNET permission** and does not upload this data to the developer or third parties over the Internet.
+- Beeze requests Android’s INTERNET permission solely to load this privacy policy in an in-app WebView. Beeze does not use this permission to upload your songs, lyrics, artwork, listening history, playlists, or other personal data to the developer.
+- When the privacy policy is loaded, GitHub Pages receives standard network request information, such as your IP address, as necessary to deliver the page. GitHub processes this information under its own privacy policy.
 - Beeze does not currently include advertising, behavioral analytics, third-party sign-in, or other third-party SDKs that collect personal information.
 - Android cloud backup of Beeze’s app data is disabled.
 - Your original audio and lyrics files remain in their original locations and will not be deleted when you uninstall Beeze.
@@ -74,7 +75,7 @@ Beeze requests the following permissions only when necessary to provide the corr
 
 - **Renaming a song:** This changes only the song’s display name within Beeze. It does not change the original audio file’s name or metadata.
 - **Deleting a song:** Deleting a local song in Beeze only adds it to the app’s scan exclusion list. It does not delete the actual audio file from your device.
-- **Restoring a song:** You can go to “About → Library scan” to manage excluded songs and remove them from the exclusion list when needed.
+- **Restoring songs and folders:** You can go to “Home → Scan → Manage” to view excluded songs and folders and remove them from the exclusion list when needed.
 - **Deleting a playlist:** Deleting a custom playlist does not delete its songs or modify or delete any original audio files.
 - **Clearing app data:** You can clear Beeze’s app data through your Android device settings.
 - **Uninstalling the app:** Uninstalling Beeze removes its locally stored app data but does not delete the original audio or lyrics files on your device.

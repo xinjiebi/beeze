@@ -106,7 +106,8 @@ fun SearchScreen(viewModel: PlayerViewModel) {
             ) {
                 Image(
                     painter = painterResource(R.drawable.ic_back),
-                    contentDescription = "返回",
+                    contentDescription = tr(R.string.back),
+                    colorFilter = themeIconTint(),
                     modifier = Modifier.size(24.dp),
                 )
             }
@@ -129,7 +130,7 @@ fun SearchScreen(viewModel: PlayerViewModel) {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.CenterStart) {
                         if (query.isEmpty()) {
                             Text(
-                                "Search Local Music",
+                                tr(R.string.search_local_music),
                                 style = BeezeType.bodyMd,
                                 color = BeezeColors.Muted,
                                 maxLines = 1,
@@ -141,7 +142,7 @@ fun SearchScreen(viewModel: PlayerViewModel) {
                 },
             )
             Text(
-                "Search",
+                tr(R.string.search),
                 style = BeezeType.button,
                 color = BeezeColors.Primary,
                 modifier = Modifier.clickable(onClick = ::submitSearch),
@@ -213,7 +214,8 @@ private fun SearchResultRow(
         }
         Image(
             painter = painterResource(R.drawable.ic_more),
-            contentDescription = "更多",
+            contentDescription = tr(R.string.more),
+            colorFilter = themeIconTint(),
             modifier = Modifier
                 .size(24.dp)
                 .iconClickable(onClick = onMore),
@@ -221,6 +223,7 @@ private fun SearchResultRow(
     }
 }
 
+@Composable
 private fun highlightedText(text: String, query: String): AnnotatedString {
     if (query.isEmpty()) return AnnotatedString(text)
     val matches = Regex(Regex.escape(query), RegexOption.IGNORE_CASE).findAll(text)

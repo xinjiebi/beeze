@@ -25,7 +25,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -64,7 +63,7 @@ fun SongActionsSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         containerColor = BeezeColors.Surface,
-        scrimColor = Color.Black.copy(alpha = 0.65f),
+        scrimColor = BeezeColors.Scrim,
         shape = RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp),
         dragHandle = {
             Box(
@@ -99,45 +98,48 @@ fun SongActionsSheet(
             }
             SongActionRow(
                 iconRes = R.drawable.ic_add_playlist,
-                label = "Add to Playlist",
+                label = tr(R.string.add_to_playlist),
                 onClick = { showAddToPlaylist = true },
             )
             SongActionRow(
                 iconRes = if (isLiked) R.drawable.ic_like_filled else R.drawable.ic_like,
-                label = if (isLiked) "Remove from Liked" else "Add to Liked",
+                label = tr(if (isLiked) R.string.remove_from_liked else R.string.add_to_liked),
                 onClick = {
                     viewModel.toggleLike(song.id)
-                    showToast(context, if (isLiked) "Removed from Liked" else "Added to Liked")
+                    showToast(
+                        context,
+                        context.getString(if (isLiked) R.string.removed_from_liked else R.string.added_to_liked),
+                    )
                     onDismiss()
                 },
             )
             SongActionRow(
                 iconRes = R.drawable.ic_edit,
-                label = "Rename in Beeze",
+                label = tr(R.string.rename_in_beeze),
                 onClick = { showRenameDialog = true },
             )
             SongActionRow(
                 iconRes = R.drawable.ic_info,
-                label = "Song info",
+                label = tr(R.string.song_info),
                 onClick = { showInfoDialog = true },
             )
             SongActionRow(
                 iconRes = R.drawable.ic_queue_clear,
                 label = when {
-                    queueIndex != null -> "Remove from Queue"
-                    playlistId != null -> "Remove from Playlist"
-                    else -> "Delete"
+                    queueIndex != null -> tr(R.string.remove_from_queue)
+                    playlistId != null -> tr(R.string.remove_from_playlist)
+                    else -> tr(R.string.delete)
                 },
                 onClick = {
                     when {
                         queueIndex != null -> {
                             viewModel.removeQueueItem(queueIndex)
-                            showToast(context, "Removed from queue")
+                            showToast(context, context.getString(R.string.removed_from_queue))
                             onDismiss()
                         }
                         playlistId != null -> {
                             viewModel.removeSongsFromPlaylist(playlistId, setOf(song.id))
-                            showToast(context, "Removed from playlist")
+                            showToast(context, context.getString(R.string.removed_from_playlist))
                             onDismiss()
                         }
                         else -> showDeleteDialog = true
@@ -164,22 +166,22 @@ fun SongActionsSheet(
         AlertDialog(
             onDismissRequest = { showDeleteDialog = false },
             containerColor = BeezeColors.Surface,
-            title = { Text("Delete from Beeze?", style = BeezeType.title, color = BeezeColors.Body) },
+            title = { Text(tr(R.string.delete_from_beeze), style = BeezeType.title, color = BeezeColors.Body) },
             text = {
                 Text(
-                    "This removes the song from Beeze, not from your device. Future scans will filter it. You can restore it in Library scan.",
+                    tr(R.string.delete_song_explanation),
                     style = BeezeType.bodySm,
                     color = BeezeColors.Muted,
                 )
             },
             confirmButton = {
                 Text(
-                    "Delete",
+                    tr(R.string.delete),
                     style = BeezeType.button,
                     color = BeezeColors.Primary,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp).clickable {
                         viewModel.deleteSongsFromApp(listOf(song))
-                        showToast(context, "Deleted from Beeze")
+                        showToast(context, context.getString(R.string.deleted_from_beeze))
                         showDeleteDialog = false
                         onDismiss()
                     },
@@ -187,7 +189,7 @@ fun SongActionsSheet(
             },
             dismissButton = {
                 Text(
-                    "Cancel",
+                    tr(R.string.cancel),
                     style = BeezeType.button,
                     color = BeezeColors.Muted,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp).clickable {
@@ -212,6 +214,13 @@ internal fun SongActionRow(iconRes: Int, label: String, onClick: () -> Unit) {
         Image(
             painter = painterResource(iconRes),
             contentDescription = label,
+            colorFilter = themeIconTint(
+                if (iconRes == R.drawable.ic_play_all || iconRes == R.drawable.ic_like_filled) {
+                    BeezeColors.Primary
+                } else {
+                    BeezeColors.Body
+                }
+            ),
             modifier = Modifier.size(24.dp),
         )
         Spacer(Modifier.width(12.dp))

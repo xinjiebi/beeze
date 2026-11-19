@@ -44,7 +44,6 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
@@ -119,7 +118,7 @@ fun DetailScreen(viewModel: PlayerViewModel, detail: DetailPage) {
         }
         when (detail) {
             DetailPage.About -> AboutScreen(viewModel)
-            DetailPage.Privacy -> PrivacyScreen(viewModel)
+            DetailPage.Privacy -> PrivacyPolicyScreen(viewModel)
             is DetailPage.Folder -> FolderDetail(viewModel, detail.folder, currentSong) { selectionSongs = it }
             is DetailPage.Album -> AlbumDetail(viewModel, detail.album, currentSong) { selectionSongs = it }
             is DetailPage.Artist -> ArtistDetail(viewModel, detail.artist, currentSong) { selectionSongs = it }
@@ -205,7 +204,7 @@ private fun EntryDetail(viewModel: PlayerViewModel, page: DetailPage.EntryList, 
         )
         DetailBody(
             viewModel = viewModel,
-            title = page.kind.title,
+            title = tr(page.kind.titleRes),
             titleAlwaysVisible = false,
             songs = songs,
             currentSong = currentSong,
@@ -220,30 +219,33 @@ private fun EntryDetail(viewModel: PlayerViewModel, page: DetailPage.EntryList, 
 }
 
 /** 入口详情的主题色顶部渐变（170.5deg：主色 5.65% → 辅色 33.98% → 透明 72.9%） */
-private fun Modifier.entryGradient(kind: EntryKind): Modifier = drawBehind {
+@Composable
+private fun Modifier.entryGradient(kind: EntryKind): Modifier {
     val stops: Array<Pair<Float, Color>> = when (kind) {
         EntryKind.LyricSync -> arrayOf(
-            0.0565f to Color(0xFF07BA99).copy(alpha = 0.8f),
-            0.3398f to Color(0xFF963EF7).copy(alpha = 0.5f),
-            0.7293f to Color(0xFF963EF7).copy(alpha = 0f),
+            0.0565f to BeezeColors.EntryLyricStart.copy(alpha = 0.8f),
+            0.3398f to BeezeColors.EntryLyricEnd.copy(alpha = 0.5f),
+            0.7293f to BeezeColors.EntryLyricEnd.copy(alpha = 0f),
         )
         EntryKind.Liked -> arrayOf(
-            0.0565f to Color(0xFFD325A8),
-            0.3398f to Color(0xFFEFBF43).copy(alpha = 0.2f),
-            0.7293f to Color(0xFFEFBF43).copy(alpha = 0f),
+            0.0565f to BeezeColors.EntryLikedStart,
+            0.3398f to BeezeColors.EntryLikedEnd.copy(alpha = 0.2f),
+            0.7293f to BeezeColors.EntryLikedEnd.copy(alpha = 0f),
         )
         EntryKind.MostPlayed -> arrayOf(
-            0.0565f to Color(0xFF18B022).copy(alpha = 0.8f),
-            0.3398f to Color(0xFF1BA8EB).copy(alpha = 0.5f),
-            0.7293f to Color(0xFF1BA8EB).copy(alpha = 0f),
+            0.0565f to BeezeColors.EntryMostPlayedStart.copy(alpha = 0.8f),
+            0.3398f to BeezeColors.EntryMostPlayedEnd.copy(alpha = 0.5f),
+            0.7293f to BeezeColors.EntryMostPlayedEnd.copy(alpha = 0f),
         )
     }
-    val brush = Brush.linearGradient(
-        *stops,
-        start = Offset(size.width * 0.45f, 0f),
-        end = Offset(size.width * 0.6f, size.height),
-    )
-    drawRect(brush)
+    return drawBehind {
+        val brush = Brush.linearGradient(
+            *stops,
+            start = Offset(size.width * 0.45f, 0f),
+            end = Offset(size.width * 0.6f, size.height),
+        )
+        drawRect(brush)
+    }
 }
 
 /** 入口详情头部：居中 132 封面（圆角 14 + 黑胶盘）+ 标题 + 两行副标题 */
@@ -256,7 +258,7 @@ private fun EntryHeader(kind: EntryKind, cover: Song?) {
         CoverWithDisc(cover?.artwork, 132.dp, cornerRadius = 14.dp)
         Spacer(Modifier.height(8.dp))
         Text(
-            kind.title,
+            tr(kind.titleRes),
             style = BeezeType.title,
             color = BeezeColors.Body,
             textAlign = TextAlign.Center,
@@ -266,7 +268,7 @@ private fun EntryHeader(kind: EntryKind, cover: Song?) {
         )
         Spacer(Modifier.height(2.dp))
         Text(
-            kind.subtitle,
+            tr(kind.subtitleRes),
             style = BeezeType.bodyMd,
             color = BeezeColors.Muted,
             textAlign = TextAlign.Center,
@@ -465,16 +467,16 @@ private fun DetailBody(
     }
     if (showRenamePlaylist && playlistId != null) {
         CreatePlaylistDialog(
-            title = "Rename playlist",
+            title = tr(R.string.rename_playlist),
             initialName = title,
-            confirmLabel = "Save",
+            confirmLabel = tr(R.string.save),
             onDismiss = { showRenamePlaylist = false },
             onConfirm = { name ->
                 if (viewModel.renamePlaylist(playlistId, name)) {
-                    showToast(context, "Playlist renamed")
+                    showToast(context, context.getString(R.string.playlist_renamed))
                     showRenamePlaylist = false
                 } else {
-                    showToast(context, "Name cannot be empty")
+                    showToast(context, context.getString(R.string.name_empty))
                 }
             },
         )
@@ -483,29 +485,29 @@ private fun DetailBody(
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { showDeletePlaylist = false },
             containerColor = BeezeColors.Surface,
-            title = { Text("Delete playlist?", style = BeezeType.title, color = BeezeColors.Body) },
+            title = { Text(tr(R.string.delete_playlist), style = BeezeType.title, color = BeezeColors.Body) },
             text = {
                 Text(
-                    "Only this playlist will be deleted. Songs stay in your library.",
+                    tr(R.string.delete_playlist_explanation),
                     style = BeezeType.bodySm,
                     color = BeezeColors.Muted,
                 )
             },
             confirmButton = {
                 Text(
-                    "Delete",
+                    tr(R.string.delete),
                     style = BeezeType.button,
                     color = BeezeColors.Primary,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp).clickable {
                         viewModel.deletePlaylist(playlistId)
-                        showToast(context, "Playlist deleted")
+                        showToast(context, context.getString(R.string.playlist_deleted))
                         showDeletePlaylist = false
                     },
                 )
             },
             dismissButton = {
                 Text(
-                    "Cancel",
+                    tr(R.string.cancel),
                     style = BeezeType.button,
                     color = BeezeColors.Muted,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp).clickable {
@@ -529,7 +531,8 @@ private fun DetailTopBar(title: String, titleAlpha: Float, onBack: () -> Unit, o
     ) {
         Image(
             painter = painterResource(R.drawable.ic_back),
-            contentDescription = "返回",
+            contentDescription = tr(R.string.back),
+            colorFilter = themeIconTint(),
             modifier = Modifier
                 .size(32.dp)
                 .iconClickable(onClick = onBack)
@@ -548,7 +551,8 @@ private fun DetailTopBar(title: String, titleAlpha: Float, onBack: () -> Unit, o
             Spacer(Modifier.width(8.dp))
             Image(
                 painter = painterResource(R.drawable.ic_more),
-                contentDescription = "歌单管理",
+                contentDescription = tr(R.string.manage_playlist),
+                colorFilter = themeIconTint(),
                 modifier = Modifier
                     .size(32.dp)
                     .iconClickable(onClick = onMore)
@@ -570,14 +574,15 @@ private fun DetailToolbar(songCount: Int, onMultiSelect: () -> Unit, onSort: (()
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            "$songCount songs",
+            songsCount(songCount),
             style = BeezeType.bodySm,
             color = BeezeColors.Muted,
             modifier = Modifier.weight(1f),
         )
         Image(
             painter = painterResource(R.drawable.ic_multiple),
-            contentDescription = "多选",
+            contentDescription = tr(R.string.multi_select),
+            colorFilter = themeIconTint(),
             modifier = Modifier
                 .size(24.dp)
                 .iconClickable(onClick = onMultiSelect),
@@ -586,7 +591,8 @@ private fun DetailToolbar(songCount: Int, onMultiSelect: () -> Unit, onSort: (()
             Spacer(Modifier.width(16.dp))
             Image(
                 painter = painterResource(R.drawable.ic_sort),
-                contentDescription = "排序",
+                contentDescription = tr(R.string.sort),
+                colorFilter = themeIconTint(),
                 modifier = Modifier
                     .size(24.dp)
                     .iconClickable(onClick = onSort),
@@ -607,14 +613,14 @@ private fun DetailActionButtons(onShuffle: () -> Unit, onPlayAll: () -> Unit) {
         DetailActionButton(
             iconRes = R.drawable.ic_shuffle,
             iconTint = BeezeColors.Primary,
-            label = "Shuffle",
+            label = tr(R.string.shuffle),
             onClick = onShuffle,
             modifier = Modifier.weight(1f),
         )
         DetailActionButton(
             iconRes = R.drawable.ic_play_all,
             iconTint = null, // 图标自带紫色
-            label = "Play all",
+            label = tr(R.string.play_all),
             onClick = onPlayAll,
             modifier = Modifier.weight(1f),
         )
@@ -642,7 +648,7 @@ private fun DetailActionButton(
         Image(
             painter = painterResource(iconRes),
             contentDescription = null,
-            colorFilter = iconTint?.let { ColorFilter.tint(it) },
+            colorFilter = themeIconTint(iconTint ?: BeezeColors.Primary),
             modifier = Modifier.size(24.dp),
         )
         Text(label, style = BeezeType.button, color = BeezeColors.Body)
@@ -733,7 +739,7 @@ private fun ArtistAlbumsHeader(albums: List<AlbumItem>, onOpenAlbum: (AlbumItem)
             contentAlignment = Alignment.CenterStart,
         ) {
             Text(
-                "${albums.size} album${if (albums.size > 1) "s" else ""}",
+                albumsCount(albums.size),
                 style = BeezeType.bodySm,
                 color = BeezeColors.Muted,
             )
@@ -758,7 +764,7 @@ private fun ArtistAlbumsHeader(albums: List<AlbumItem>, onOpenAlbum: (AlbumItem)
                         overflow = TextOverflow.Ellipsis,
                     )
                     Text(
-                        "${album.songs.size} song${if (album.songs.size > 1) "s" else ""}",
+                        songsCount(album.songs.size),
                         style = BeezeType.caption,
                         color = BeezeColors.Muted,
                     )

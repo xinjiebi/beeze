@@ -36,6 +36,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
@@ -61,19 +63,27 @@ import kotlin.math.abs
 import kotlinx.coroutines.launch
 
 /** 顶部紫色渐变（约 162deg，0% rgba(161,53,255,0.15) → 58% 透明） */
-fun Modifier.topPurpleGradient(): Modifier = drawBehind {
-    val brush = Brush.linearGradient(
-        0f to BeezeColors.Primary.copy(alpha = 0.15f),
-        0.58f to BeezeColors.Primary.copy(alpha = 0f),
-        start = Offset.Zero,
-        end = Offset(size.width * 0.31f, size.height * 0.95f),
-    )
-    drawRect(brush)
+@Composable
+fun Modifier.topPurpleGradient(): Modifier {
+    val primary = BeezeColors.Primary
+    return drawBehind {
+        val brush = Brush.linearGradient(
+            0f to primary.copy(alpha = 0.15f),
+            0.58f to primary.copy(alpha = 0f),
+            start = Offset.Zero,
+            end = Offset(size.width * 0.31f, size.height * 0.95f),
+        )
+        drawRect(brush)
+    }
 }
 
 fun showToast(context: Context, message: String) {
     Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
 }
+
+/** 矢量资源提供图形，功能图标颜色统一读取当前主题。 */
+@Composable
+fun themeIconTint(color: Color = BeezeColors.Body): ColorFilter = ColorFilter.tint(color)
 
 /** 图标点击：去掉波纹背景色，改为马达震动反馈 */
 @Composable

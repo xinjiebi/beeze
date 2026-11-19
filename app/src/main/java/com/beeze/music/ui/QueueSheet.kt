@@ -21,7 +21,9 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -29,11 +31,12 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -54,15 +57,16 @@ import com.beeze.music.data.Song
 import com.beeze.music.ui.theme.BeezeColors
 import com.beeze.music.ui.theme.BeezeType
 import kotlin.math.roundToInt
+import kotlinx.coroutines.launch
 
 /** 面板行内图标色（拖拽把手 / 删除 / 更多） */
-private val QueueIconTint = Color(0xFFE5E5E0)
+private val QueueIconTint @Composable get() = BeezeColors.Hairline
 
 /**
  * 播放列表面板（Figma 87:1724）：底部弹层，高度由内容支撑（标题行 + N 首歌曲行），
  * 最小为可用高度的 35%，最大 75%。
  * 顶部拖拽把 60x2；标题行左侧「N songs」，右侧 随机/清空/添加；
- * 歌曲行 60dp：长按左侧把手拖拽排序（拖动时只移动视觉，松手才一次性提交 move），
+ * 歌曲行 60dp：长按整行拖拽排序（拖动时只移动视觉，松手才一次性提交 move），
  * 右侧 X 从队列移除、⋮ 更多操作。从 MiniPlayer 与播放页右下角列表按钮拉起。
  */
 @OptIn(ExperimentalMaterial3Api::class)
@@ -74,9 +78,15 @@ fun QueueSheet(viewModel: PlayerViewModel) {
     val listState = rememberLazyListState()
     var showAddSongs by remember { mutableStateOf(false) }
     var actionSong by remember { mutableStateOf<Pair<Int, Song>?>(null) }
+    var queueDragging by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val queueSheetState = rememberModalBottomSheetState(
+        confirmValueChange = { it != SheetValue.Hidden || !queueDragging },
+    )
 
     ModalBottomSheet(
         onDismissRequest = viewModel::closeQueue,
+        sheetState = queueSheetState,
         containerColor = BeezeColors.Surface,
         shape = RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp),
         dragHandle = {
@@ -85,7 +95,7 @@ fun QueueSheet(viewModel: PlayerViewModel) {
                     Modifier
                         .size(60.dp, 2.dp)
                         .clip(RoundedCornerShape(1.dp))
-                        .background(BeezeColors.Hairline)
+                        .background(BeezeColors.Hairline),
                 )
             }
         },
@@ -107,36 +117,39 @@ fun QueueSheet(viewModel: PlayerViewModel) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    "${queue.size} songs",
+                    songsCount(queue.size),
                     style = BeezeType.bodySm,
                     color = BeezeColors.Muted,
                     modifier = Modifier.weight(1f),
                 )
                 Image(
                     painter = painterResource(R.drawable.ic_shuffle),
-                    contentDescription = "随机播放",
+                    contentDescription = tr(R.string.shuffle),
+                    colorFilter = themeIconTint(),
                     modifier = Modifier
                         .size(24.dp)
                         .iconClickable {
                             viewModel.applyPlayMode(PlayMode.Shuffle)
-                            showToast(context, "随机播放")
+                            showToast(context, context.getString(R.string.shuffle))
                         },
                 )
                 Spacer(Modifier.width(16.dp))
                 Image(
                     painter = painterResource(R.drawable.ic_queue_clear),
-                    contentDescription = "清空播放列表",
+                    contentDescription = tr(R.string.queue_cleared),
+                    colorFilter = themeIconTint(),
                     modifier = Modifier
                         .size(24.dp)
                         .iconClickable {
                             viewModel.clearQueue()
-                            showToast(context, "已清空播放列表")
+                            showToast(context, context.getString(R.string.queue_cleared))
                         },
                 )
                 Spacer(Modifier.width(16.dp))
                 Image(
                     painter = painterResource(R.drawable.ic_queue_add),
-                    contentDescription = "添加歌曲",
+                    contentDescription = tr(R.string.add_songs),
+                    colorFilter = themeIconTint(),
                     modifier = Modifier
                         .size(24.dp)
                         .iconClickable { showAddSongs = true },
@@ -161,7 +174,7 @@ fun QueueSheet(viewModel: PlayerViewModel) {
             } else -1
 
             LazyColumn(state = listState, modifier = Modifier.fillMaxWidth().weight(1f, fill = false)) {
-                itemsIndexed(queue, key = { index, _ -> index }) { index, song ->
+                itemsIndexed(queue, key = { _, song -> song.id }) { index, song ->
                     val isCurrent = index == queueIndex
                     // 其他行给被拖拽的行让位
                     val shiftPx = when {
@@ -185,24 +198,35 @@ fun QueueSheet(viewModel: PlayerViewModel) {
                         onMore = { actionSong = index to song },
                         dragHandle = Modifier.iconDragHandle(
                             onDragStart = {
+                                queueDragging = true
                                 dragFrom = index
                                 dragOffset = 0f
                                 haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                             },
                             onDrag = { delta -> dragOffset += delta },
                             onDragEnd = {
-                                if (dragFrom >= 0 && dragTarget >= 0 && dragTarget != dragFrom) {
-                                    viewModel.moveQueueItem(dragFrom, dragTarget)
+                                val target = if (dragFrom >= 0) {
+                                    (dragFrom + (dragOffset / rowHeightPx).roundToInt())
+                                        .coerceIn(0, queue.lastIndex)
+                                } else {
+                                    -1
+                                }
+                                if (target >= 0 && target != dragFrom) {
+                                    viewModel.moveQueueItem(dragFrom, target)
                                 }
                                 dragFrom = -1
                                 dragOffset = 0f
+                                scope.launch {
+                                    withFrameNanos { }
+                                    queueDragging = false
+                                }
                             },
                         ),
                     )
                 }
             }
-            }
-        }
+                    }
+                }
     }
 
     if (showAddSongs) {
@@ -218,7 +242,7 @@ fun QueueSheet(viewModel: PlayerViewModel) {
     }
 }
 
-/** 长按把手触发的垂直拖拽手势；位移通过 onDrag 累加，提交在 onDragEnd 统一做 */
+/** 长按整行触发的垂直拖拽手势；位移通过 onDrag 累加，提交在 onDragEnd 统一做 */
 private fun Modifier.iconDragHandle(
     onDragStart: () -> Unit,
     onDrag: (Float) -> Unit,
@@ -253,16 +277,16 @@ private fun QueueRow(
             .height(60.dp)
             .background(BeezeColors.Surface)
             .clickable(onClick = onClick) // 列表整行保留波纹（项目约定）
+            .then(dragHandle)
             .padding(start = 8.dp, end = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Image(
             painter = painterResource(R.drawable.ic_queue_move),
-            contentDescription = "拖拽排序",
+            contentDescription = tr(R.string.drag_to_reorder),
             colorFilter = ColorFilter.tint(QueueIconTint),
             modifier = Modifier
                 .size(32.dp)
-                .then(dragHandle)
                 .padding(4.dp),
         )
         Spacer(Modifier.width(8.dp))
@@ -285,7 +309,7 @@ private fun QueueRow(
         }
         Image(
             painter = painterResource(R.drawable.ic_queue_remove),
-            contentDescription = "从队列移除",
+            contentDescription = tr(R.string.remove_from_queue),
             colorFilter = ColorFilter.tint(QueueIconTint),
             modifier = Modifier
                 .size(32.dp)
@@ -295,7 +319,7 @@ private fun QueueRow(
         Spacer(Modifier.width(8.dp))
         Image(
             painter = painterResource(R.drawable.ic_more),
-            contentDescription = "更多",
+            contentDescription = tr(R.string.more),
             colorFilter = ColorFilter.tint(QueueIconTint),
             modifier = Modifier
                 .size(32.dp)

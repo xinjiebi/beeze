@@ -5,6 +5,7 @@ import android.content.ComponentName
 import android.content.ContentUris
 import android.os.SystemClock
 import androidx.core.content.ContextCompat
+import androidx.annotation.StringRes
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.common.MediaItem
@@ -14,7 +15,12 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.beeze.music.data.ALBUM_ART_BASE_URI
 import com.beeze.music.data.AlbumItem
+import com.beeze.music.data.AppLanguage
+import com.beeze.music.data.AppLocale
+import com.beeze.music.data.AppSettingsStore
+import com.beeze.music.data.AppearanceMode
 import com.beeze.music.data.ArtistItem
+import com.beeze.music.data.FilteredFolder
 import com.beeze.music.data.FolderItem
 import com.beeze.music.data.ForYouCovers
 import com.beeze.music.data.ListeningStore
@@ -38,14 +44,23 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.yield
 
 /** 主页标签 */
-enum class HomeTab(val label: String) {
-    ForYou("For you"), Songs("Songs"), Folders("Folders"), Albums("Albums"), Artists("Artists")
+enum class HomeTab(@StringRes val labelRes: Int) {
+    ForYou(R.string.tab_for_you),
+    Songs(R.string.tab_songs),
+    Folders(R.string.tab_folders),
+    Albums(R.string.tab_albums),
+    Artists(R.string.tab_artists),
 }
 
 /** 界面切换：主页 / 播放器页 */
 enum class AppScreen { Home, Player }
+
+data class ScanProgress(val scanned: Int = 0, val total: Int = 0)
+
+data class ScanResult(val addedSongs: Int, val totalSongs: Int)
 
 /** 播放模式：列表循环 → 单曲循环 → 随机，循环切换（Figma 6:195 / 6:199 / 6:202）。
  *  每次启动默认列表循环，不持久化；只有从「Shuffle」入口播放才是随机 */
@@ -60,10 +75,10 @@ enum class PlayMode {
 }
 
 /** For you 三个固定入口（各自有主题色与副标题的详情页） */
-enum class EntryKind(val title: String, val subtitle: String) {
-    LyricSync("Lyric Sync", "Watch lyrics animate in sync as your local music plays"),
-    Liked("Liked", "Collect tunes you love, keep all your liked and saved local music here"),
-    MostPlayed("Most Played", "Track your listening habits and show the local songs you play the most"),
+enum class EntryKind(@StringRes val titleRes: Int, @StringRes val subtitleRes: Int) {
+    LyricSync(R.string.entry_lyric_sync, R.string.entry_lyric_sync_subtitle),
+    Liked(R.string.entry_liked, R.string.entry_liked_subtitle),
+    MostPlayed(R.string.entry_most_played, R.string.entry_most_played_subtitle),
 }
 
 /** 二级详情页：文件夹 / 专辑 / 艺术家 / 动态歌曲列表（For you 各卡片与歌单共用） */
@@ -88,11 +103,34 @@ sealed interface DetailPage {
 
 class PlayerViewModel(application: Application) : AndroidViewModel(application) {
 
-    private val repository = MediaStoreRepository(application)
+    private var repository = MediaStoreRepository(AppLocale.wrap(application))
     private val listeningStore = ListeningStore(application)
     private val playlistStore = PlaylistStore(application)
     private val songSortStore = SongSortStore(application)
     private val songTitleStore = SongTitleStore(application)
+    private val appSettingsStore = AppSettingsStore(application)
+
+    private val _appearanceMode = MutableStateFlow(appSettingsStore.appearance)
+    val appearanceMode: StateFlow<AppearanceMode> = _appearanceMode
+
+    private val _appLanguage = MutableStateFlow(appSettingsStore.language)
+    val appLanguage: StateFlow<AppLanguage> = _appLanguage
+
+    fun setAppearanceMode(mode: AppearanceMode) {
+        appSettingsStore.appearance = mode
+        _appearanceMode.value = mode
+    }
+
+    suspend fun setAppLanguage(language: AppLanguage) {
+        appSettingsStore.language = language
+        val localizedRepository = MediaStoreRepository(AppLocale.wrap(getApplication()))
+        val cached = withContext(Dispatchers.IO) { localizedRepository.readCachedSongs() }
+        _appLanguage.value = language
+        repository = localizedRepository
+        if (!cached.isNullOrEmpty()) applySongs(cached)
+        queueVersion++
+        controller?.let(::syncFromController)
+    }
 
     // ---------- 权限与媒体库 ----------
     private val _hasPermission = MutableStateFlow(false)
@@ -108,8 +146,23 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private val _filteredSongs = MutableStateFlow(repository.filteredSongs)
     val filteredSongs: StateFlow<List<Song>> = _filteredSongs
 
+    private val _filteredFolders = MutableStateFlow(repository.filteredFolders)
+    val filteredFolders: StateFlow<List<FilteredFolder>> = _filteredFolders
+
+    private val _skipShortAudio = MutableStateFlow(repository.skipShortAudio)
+    val skipShortAudio: StateFlow<Boolean> = _skipShortAudio
+
     private val _scanning = MutableStateFlow(false)
     val scanning: StateFlow<Boolean> = _scanning
+
+    private val _initialHomeScan = MutableStateFlow(false)
+    val initialHomeScan: StateFlow<Boolean> = _initialHomeScan
+
+    private val _scanProgress = MutableStateFlow(ScanProgress())
+    val scanProgress: StateFlow<ScanProgress> = _scanProgress
+
+    private val _scanResult = MutableStateFlow<ScanResult?>(null)
+    val scanResult: StateFlow<ScanResult?> = _scanResult
 
     private val _folders = MutableStateFlow<List<FolderItem>>(emptyList())
     val folders: StateFlow<List<FolderItem>> = _folders
@@ -139,6 +192,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     private val _scanOpen = MutableStateFlow(false)
     val scanOpen: StateFlow<Boolean> = _scanOpen
+
+    private val _scanManageOpen = MutableStateFlow(false)
+    val scanManageOpen: StateFlow<Boolean> = _scanManageOpen
 
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery
@@ -240,9 +296,21 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    fun onPermissionResult(granted: Boolean) {
+    fun onPermissionResult(granted: Boolean, initialCheck: Boolean = false) {
+        val justGranted = granted && !_hasPermission.value
         _hasPermission.value = granted
-        if (granted) loadSongs()
+        if (granted) {
+            if (justGranted && !initialCheck) {
+                _selectedTab.value = HomeTab.Songs
+                _initialHomeScan.value = true
+            }
+            loadSongs()
+        }
+    }
+
+    fun completeInitialHomeScan() {
+        _initialHomeScan.value = false
+        refreshRecentOnReturn()
     }
 
     fun selectTab(tab: HomeTab) {
@@ -287,12 +355,29 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun openScan() {
+        _scanManageOpen.value = false
+        _scanResult.value = null
         _scanOpen.value = true
+        loadSongs()
+    }
+
+    fun openScanManage() {
+        _scanManageOpen.value = true
+    }
+
+    fun closeScanManage() {
+        _scanManageOpen.value = false
     }
 
     fun closeScan() {
+        _scanManageOpen.value = false
         _scanOpen.value = false
         refreshRecentOnReturn()
+    }
+
+    fun setSkipShortAudio(skip: Boolean) {
+        repository.skipShortAudio = skip
+        _skipShortAudio.value = skip
     }
 
     /** 歌名结果立即展示，歌词文件在后台检索并追加，保证歌名命中始终排在歌词命中之前 */
@@ -329,15 +414,25 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         refreshRecentOnReturn()
     }
 
-    /** 加载媒体库：后台扫 MediaStore，有变化才更新；空结果不写缓存（防查询偶发失败冲掉好缓存） */
+    /** 后台扫描并逐条汇报进度；扫描页打开时保留本次新增数量用于结果页 */
     fun loadSongs() {
         if (_scanning.value) return
         _scanning.value = true
+        _scanProgress.value = ScanProgress()
+        val previousIds = _songs.value.mapTo(mutableSetOf()) { it.id }
         viewModelScope.launch {
             try {
-                val list = repository.querySongs()
-                if (list != _songs.value) applySongs(list)
+                val list = repository.querySongs { scanned, total ->
+                    _scanProgress.value = ScanProgress(scanned, total)
+                }
+                if (list != _songs.value || !_libraryLoaded.value) applySongs(list)
                 if (list.isNotEmpty()) repository.saveCachedSongs(list)
+                if (_scanOpen.value) {
+                    _scanResult.value = ScanResult(
+                        addedSongs = list.count { it.id !in previousIds },
+                        totalSongs = list.size,
+                    )
+                }
             } finally {
                 _scanning.value = false
             }
@@ -546,27 +641,85 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     /** 只从 App 与播放队列删除，真实音频文件保留；后续扫描按 id/path 过滤 */
     fun deleteSongsFromApp(songs: List<Song>) {
         if (songs.isEmpty()) return
-        repository.filterSongs(songs)
-        _filteredSongs.value = repository.filteredSongs
+        viewModelScope.launch {
+            yield()
+            repository.filterSongs(songs)
+            _filteredSongs.value = repository.filteredSongs
+            removeSongsFromLibrary(songs)
+        }
+    }
+
+    fun deleteFolderFromApp(folder: FolderItem) {
+        if (folder.songs.isEmpty()) return
+        viewModelScope.launch {
+            yield()
+            repository.filterFolder(folder)
+            _filteredFolders.value = repository.filteredFolders
+            removeSongsFromLibrary(folder.songs)
+        }
+    }
+
+    private fun removeSongsFromLibrary(songs: List<Song>) {
         val ids = songs.mapTo(mutableSetOf()) { it.id }
+        val remainingSongs = _songs.value.filterNot { it.id in ids }
         playlistStore.removeSongsEverywhere(ids)
         _playlists.value = playlistStore.playlists
-        controller?.let { player ->
-            queueVersion++
-            for (index in player.mediaItemCount - 1 downTo 0) {
-                if (player.getMediaItemAt(index).mediaId.toLongOrNull() in ids) {
-                    player.removeMediaItem(index)
-                }
-            }
+        _songs.value = remainingSongs
+        _folders.value = _folders.value.mapNotNull { folder ->
+            val remaining = folder.songs.filterNot { it.id in ids }
+            if (remaining.isEmpty()) null else folder.copy(songs = remaining)
         }
-        applySongs(_songs.value.filterNot { it.id in ids })
-        viewModelScope.launch { repository.saveCachedSongs(_songs.value) }
+        _albums.value = _albums.value.mapNotNull { album ->
+            val remaining = album.songs.filterNot { it.id in ids }
+            if (remaining.isEmpty()) null else album.copy(songs = remaining)
+        }
+        _artists.value = _artists.value.mapNotNull { artist ->
+            val remaining = artist.songs.filterNot { it.id in ids }
+            if (remaining.isEmpty()) null else artist.copy(songs = remaining)
+        }
+        _lyricSongs.value = _lyricSongs.value.filterNot { it.id in ids }
+        _likedSongs.value = _likedSongs.value.filterNot { it.id in ids }
+        _featuredSongs.value = _featuredSongs.value.filterNot { it.id in ids }
+        _mostPlayedSongs.value = _mostPlayedSongs.value.filterNot { it.id in ids }
+        _recentSongs.value = _recentSongs.value.filterNot { it.id in ids }
+        _weeklyTop.value = _weeklyTop.value.filterNot { (song, _) -> song.id in ids }
+        ids.forEach { songByMediaId.remove(it.toString()) }
+        removeSongsFromPlayer(ids)
+        refreshCardCovers()
+        viewModelScope.launch {
+            repository.persistFilters()
+            withContext(Dispatchers.IO) { playlistStore.persist() }
+            repository.saveCachedSongs(remainingSongs)
+        }
         if (_searchOpen.value) updateSearchQuery(_searchQuery.value)
+    }
+
+    private fun removeSongsFromPlayer(ids: Set<Long>) {
+        val player = controller ?: return
+        val indices = (0 until player.mediaItemCount).filter { index ->
+            player.getMediaItemAt(index).mediaId.toLongOrNull() in ids
+        }
+        if (indices.isEmpty()) return
+        var end = indices.lastIndex
+        while (end >= 0) {
+            var start = end
+            while (start > 0 && indices[start - 1] == indices[start] - 1) start--
+            player.removeMediaItems(indices[start], indices[end] + 1)
+            end = start - 1
+        }
+        queueVersion++
+        syncFromController(player)
     }
 
     fun restoreFilteredSong(song: Song) {
         repository.restoreFilteredSong(song)
         _filteredSongs.value = repository.filteredSongs
+        loadSongs()
+    }
+
+    fun restoreFilteredFolder(folder: FilteredFolder) {
+        repository.restoreFilteredFolder(folder)
+        _filteredFolders.value = repository.filteredFolders
         loadSongs()
     }
 

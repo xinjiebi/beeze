@@ -37,6 +37,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.beeze.music.PlayerViewModel
+import com.beeze.music.R
 import com.beeze.music.ui.theme.BeezeColors
 import com.beeze.music.ui.theme.BeezeType
 import kotlin.math.abs
@@ -87,28 +88,27 @@ fun SleepTimerSheet(viewModel: PlayerViewModel, onDismiss: () -> Unit) {
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        "Sleep timer",
+                        tr(R.string.sleep_timer),
                         style = BeezeType.bodySm,
                         color = BeezeColors.Ink,
                         modifier = Modifier.weight(1f),
                     )
                     Text(
-                        "OK",
+                        tr(R.string.ok),
                         style = BeezeType.button,
                         color = BeezeColors.Primary,
                         modifier = Modifier.iconClickable {
                             val hours = hourIndex
                             val minutes = minuteSteps[minuteIndex]
                             viewModel.setSleepTimer((hours * 60 + minutes) * 60_000L)
-                            showToast(
-                                context,
-                                when {
-                                    hours > 0 && minutes > 0 -> "Will stop playing in $hours hr $minutes min"
-                                    hours > 0 -> "Will stop playing in $hours hr"
-                                    minutes > 0 -> "Will stop playing in $minutes min"
-                                    else -> "Sleep timer off"
-                                },
-                            )
+                            val message = when {
+                                hours > 0 && minutes > 0 ->
+                                    context.getString(R.string.timer_set_hours_minutes, hours, minutes)
+                                hours > 0 -> context.getString(R.string.timer_set_hours, hours)
+                                minutes > 0 -> context.getString(R.string.timer_set_minutes, minutes)
+                                else -> context.getString(R.string.timer_off)
+                            }
+                            showToast(context, message)
                             onDismiss()
                         },
                     )
@@ -119,14 +119,14 @@ fun SleepTimerSheet(viewModel: PlayerViewModel, onDismiss: () -> Unit) {
                     Row(Modifier.fillMaxSize().padding(horizontal = 24.dp)) {
                         WheelWithUnit(
                             items = (0..12).toList(),
-                            unit = "Hours",
+                            unit = tr(R.string.hours),
                             initialIndex = hourIndex,
                             onSelectedChange = { hourIndex = it },
                             modifier = Modifier.weight(1f),
                         )
                         WheelWithUnit(
                             items = minuteSteps,
-                            unit = "Minutes",
+                            unit = tr(R.string.minutes),
                             initialIndex = minuteIndex,
                             onSelectedChange = { minuteIndex = it },
                             modifier = Modifier.weight(1f),

@@ -35,7 +35,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
@@ -82,20 +81,20 @@ fun BatchSelectionScreen(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 Text(
-                    "Cancel",
+                    tr(R.string.cancel),
                     style = BeezeType.button,
                     color = BeezeColors.Muted,
                     modifier = Modifier.width(60.dp).clickable(onClick = onCancel),
                 )
                 Text(
-                    if (selectedIds.isEmpty()) "" else "Selected(${selectedIds.size})",
+                    if (selectedIds.isEmpty()) "" else tr(R.string.selected_count, selectedIds.size),
                     style = BeezeType.button,
                     color = BeezeColors.Body,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.weight(1f),
                 )
                 Text(
-                    "Done",
+                    tr(R.string.done),
                     style = BeezeType.button,
                     color = BeezeColors.Primary,
                     textAlign = TextAlign.End,
@@ -179,24 +178,28 @@ fun BatchSelectionScreen(
                 val enabled = selectedIds.isNotEmpty()
                 BatchAction(
                     iconRes = R.drawable.ic_like,
-                    label = "Liked",
+                    label = tr(R.string.entry_liked),
                     width = 48.dp,
                     enabled = enabled,
                     onClick = {
                         val added = viewModel.likeSongs(selectedIds)
-                        showToast(context, if (added > 0) "Added $added song${if (added > 1) "s" else ""} to Liked" else "Already in Liked")
+                        showToast(
+                            context,
+                            if (added > 0) context.getString(R.string.liked_added_count, added)
+                            else context.getString(R.string.already_in_liked),
+                        )
                     },
                 )
                 BatchAction(
                     iconRes = R.drawable.ic_add_playlist,
-                    label = "Add to Playlist",
+                    label = tr(R.string.add_to_playlist),
                     width = 96.dp,
                     enabled = enabled,
                     onClick = { showAddToPlaylist = true },
                 )
                 BatchAction(
                     iconRes = R.drawable.ic_queue_clear,
-                    label = "Delete",
+                    label = tr(R.string.delete),
                     width = 48.dp,
                     enabled = enabled,
                     onClick = {
@@ -204,7 +207,7 @@ fun BatchSelectionScreen(
                             showDeleteDialog = true
                         } else {
                             viewModel.removeSongsFromPlaylist(playlistId, selectedIds)
-                            showToast(context, "Removed ${selectedIds.size} song${if (selectedIds.size > 1) "s" else ""} from playlist")
+                            showToast(context, context.getString(R.string.removed_from_playlist_count, selectedIds.size))
                             onCancel()
                         }
                     },
@@ -225,22 +228,22 @@ fun BatchSelectionScreen(
         AlertDialog(
             onDismissRequest = { showDeleteDialog = false },
             containerColor = BeezeColors.Surface,
-            title = { Text("Delete from Beeze?", style = BeezeType.title, color = BeezeColors.Body) },
+            title = { Text(tr(R.string.delete_from_beeze), style = BeezeType.title, color = BeezeColors.Body) },
             text = {
                 Text(
-                    "This removes ${selectedIds.size} selected song${if (selectedIds.size > 1) "s" else ""} from Beeze, not from your device. Future scans will filter them. You can restore them in Library scan.",
+                    tr(R.string.delete_selected_explanation, selectedIds.size),
                     style = BeezeType.bodySm,
                     color = BeezeColors.Muted,
                 )
             },
             confirmButton = {
                 Text(
-                    "Delete",
+                    tr(R.string.delete),
                     style = BeezeType.button,
                     color = BeezeColors.Primary,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp).clickable {
                         viewModel.deleteSongsFromApp(selectedSongs)
-                        showToast(context, "Deleted from Beeze")
+                        showToast(context, context.getString(R.string.deleted_from_beeze))
                         showDeleteDialog = false
                         onCancel()
                     },
@@ -248,7 +251,7 @@ fun BatchSelectionScreen(
             },
             dismissButton = {
                 Text(
-                    "Cancel",
+                    tr(R.string.cancel),
                     style = BeezeType.button,
                     color = BeezeColors.Muted,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp).clickable {
@@ -296,7 +299,8 @@ private fun BatchSongRow(
         if (showDragHandle) {
             Image(
                 painter = painterResource(R.drawable.ic_queue_move),
-                contentDescription = "拖拽排序",
+                contentDescription = tr(R.string.drag_to_reorder),
+                colorFilter = themeIconTint(),
                 modifier = Modifier.size(24.dp).then(dragHandle),
             )
             Spacer(Modifier.width(8.dp))
@@ -324,10 +328,12 @@ private fun BatchSongRow(
 
 @Composable
 internal fun SelectionIndicator(selected: Boolean) {
+    val primary = BeezeColors.Primary
+    val muted = BeezeColors.Muted
     Canvas(Modifier.size(24.dp)) {
         val unit = size.width / 24f
         if (selected) {
-            drawCircle(BeezeColors.Primary, radius = 9f * unit)
+            drawCircle(primary, radius = 9f * unit)
             val check = Path().apply {
                 moveTo(8f * unit, 12f * unit)
                 lineTo(11f * unit, 15f * unit)
@@ -335,7 +341,7 @@ internal fun SelectionIndicator(selected: Boolean) {
             }
             drawPath(
                 check,
-                Color.White,
+                BeezeColors.OnGradient,
                 style = Stroke(
                     width = 1.75f * unit,
                     cap = androidx.compose.ui.graphics.StrokeCap.Round,
@@ -344,7 +350,7 @@ internal fun SelectionIndicator(selected: Boolean) {
             )
         } else {
             drawCircle(
-                BeezeColors.Muted,
+                muted,
                 radius = 8.125f * unit,
                 style = Stroke(width = 1.75f * unit),
             )
@@ -371,6 +377,7 @@ private fun BatchAction(
         Image(
             painter = painterResource(iconRes),
             contentDescription = label,
+            colorFilter = themeIconTint(),
             modifier = Modifier.size(24.dp),
         )
         Text(

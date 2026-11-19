@@ -14,7 +14,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -34,7 +33,7 @@ fun PlaylistActionsSheet(
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         containerColor = BeezeColors.Surface,
-        scrimColor = Color.Black.copy(alpha = 0.65f),
+        scrimColor = BeezeColors.Scrim,
         shape = RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp),
         dragHandle = {
             Box(Modifier.fillMaxWidth().padding(10.dp), contentAlignment = Alignment.Center) {
@@ -56,8 +55,8 @@ fun PlaylistActionsSheet(
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp),
             )
-            SongActionRow(R.drawable.ic_edit, "Rename Playlist", onRename)
-            SongActionRow(R.drawable.ic_queue_clear, "Delete Playlist", onDelete)
+            SongActionRow(R.drawable.ic_edit, tr(R.string.rename_playlist_action), onRename)
+            SongActionRow(R.drawable.ic_queue_clear, tr(R.string.delete_playlist_action), onDelete)
         }
     }
 }

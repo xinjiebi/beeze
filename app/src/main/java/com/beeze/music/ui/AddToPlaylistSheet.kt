@@ -22,12 +22,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.beeze.music.PlayerViewModel
+import com.beeze.music.R
 import com.beeze.music.data.Song
 import com.beeze.music.ui.theme.BeezeColors
 import com.beeze.music.ui.theme.BeezeType
@@ -52,7 +52,12 @@ fun AddToPlaylistSheet(viewModel: PlayerViewModel, songs: List<Song>, onDismiss:
             onDismiss = { showCreateDialog = false },
             onConfirm = { name ->
                 val playlist = viewModel.createPlaylistAndAdd(name, songs)
-                showToast(context, "Added ${songs.size} song${if (songs.size > 1) "s" else ""} to ${playlist.name}")
+                val message = if (songs.size == 1) {
+                    context.getString(R.string.added_one_to_new_playlist, playlist.name)
+                } else {
+                    context.getString(R.string.added_songs_to_new_playlist, songs.size, playlist.name)
+                }
+                showToast(context, message)
                 showCreateDialog = false
                 onDismiss()
             },
@@ -63,7 +68,7 @@ fun AddToPlaylistSheet(viewModel: PlayerViewModel, songs: List<Song>, onDismiss:
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         containerColor = BeezeColors.Surface,
-        scrimColor = Color.Black.copy(alpha = 0.65f),
+        scrimColor = BeezeColors.Scrim,
         shape = RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp),
         dragHandle = {
             Box(
@@ -82,7 +87,7 @@ fun AddToPlaylistSheet(viewModel: PlayerViewModel, songs: List<Song>, onDismiss:
         BoxWithConstraints {
             Column(Modifier.fillMaxWidth().height(357.dp.coerceAtMost(maxHeight))) {
                 Text(
-                    "Add to playlist",
+                    tr(R.string.add_to_playlist),
                     style = BeezeType.button.copy(fontWeight = FontWeight.Bold),
                     color = BeezeColors.Body,
                     modifier = Modifier
@@ -98,10 +103,12 @@ fun AddToPlaylistSheet(viewModel: PlayerViewModel, songs: List<Song>, onDismiss:
                                 onClick = {
                                     val added = viewModel.addSongsToPlaylist(playlist.id, songs.map { it.id })
                                     val message = when {
-                                        songs.size == 1 && added == 1 -> "Added to ${playlist.name}"
-                                        added == 0 -> "Already in ${playlist.name}"
-                                        added == songs.size -> "Added $added songs to ${playlist.name}"
-                                        else -> "Added $added songs; duplicates skipped"
+                                        songs.size == 1 && added == 1 ->
+                                            context.getString(R.string.added_to_playlist_named, playlist.name)
+                                        added == 0 -> context.getString(R.string.already_in_playlist, playlist.name)
+                                        added == songs.size ->
+                                            context.getString(R.string.added_songs_to_playlist, added, playlist.name)
+                                        else -> context.getString(R.string.added_songs_duplicates, added)
                                     }
                                     showToast(context, message)
                                     onDismiss()

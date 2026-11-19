@@ -28,13 +28,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.beeze.music.PlayerViewModel
+import com.beeze.music.R
 import com.beeze.music.ui.theme.BeezeColors
 import com.beeze.music.ui.theme.BeezeType
 
@@ -49,7 +49,7 @@ fun QueueAddSongsSheet(viewModel: PlayerViewModel, onDismiss: () -> Unit) {
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         containerColor = BeezeColors.Surface,
-        scrimColor = Color.Black.copy(alpha = 0.65f),
+        scrimColor = BeezeColors.Scrim,
         shape = RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp),
         dragHandle = {
             Box(Modifier.fillMaxWidth().padding(10.dp), contentAlignment = Alignment.Center) {
@@ -69,13 +69,13 @@ fun QueueAddSongsSheet(viewModel: PlayerViewModel, onDismiss: () -> Unit) {
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
-                        "Add songs",
+                        tr(R.string.add_songs),
                         style = BeezeType.button.copy(fontWeight = FontWeight.Bold),
                         color = BeezeColors.Body,
                         modifier = Modifier.weight(1f),
                     )
                     Text(
-                        if (selectedIds.isEmpty()) "Add" else "Add (${selectedIds.size})",
+                        if (selectedIds.isEmpty()) tr(R.string.add) else tr(R.string.add_count, selectedIds.size),
                         style = BeezeType.button,
                         color = BeezeColors.Primary,
                         modifier = Modifier
@@ -85,11 +85,15 @@ fun QueueAddSongsSheet(viewModel: PlayerViewModel, onDismiss: () -> Unit) {
                                 else Modifier.clickable {
                                     val selectedSongs = songs.filter { it.id in selectedIds }
                                     val added = viewModel.addSongsToQueue(selectedSongs)
-                                    showToast(
-                                        context,
-                                        if (added > 0) "Added $added song${if (added > 1) "s" else ""} to queue"
-                                        else "Already in queue",
-                                    )
+                                    val message = if (added > 0) {
+                                        context.getString(
+                                            if (added == 1) R.string.added_one_to_queue else R.string.added_to_queue_count,
+                                            added,
+                                        )
+                                    } else {
+                                        context.getString(R.string.already_in_queue)
+                                    }
+                                    showToast(context, message)
                                     onDismiss()
                                 }
                             )

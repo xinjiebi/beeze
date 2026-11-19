@@ -30,6 +30,7 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import com.beeze.music.PlayerViewModel
+import com.beeze.music.R
 import com.beeze.music.data.Song
 import com.beeze.music.ui.theme.BeezeColors
 import com.beeze.music.ui.theme.BeezeType
@@ -43,7 +44,7 @@ fun RenameSongDialog(viewModel: PlayerViewModel, song: Song, onDismiss: () -> Un
 
     fun save() {
         if (viewModel.renameSong(song, name)) {
-            showToast(context, "Display name updated")
+            showToast(context, context.getString(R.string.display_name_updated))
             onDismiss()
         }
     }
@@ -55,7 +56,7 @@ fun RenameSongDialog(viewModel: PlayerViewModel, song: Song, onDismiss: () -> Un
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = BeezeColors.Surface,
-        title = { Text("Rename in Beeze", style = BeezeType.title, color = BeezeColors.Body) },
+        title = { Text(tr(R.string.rename_in_beeze), style = BeezeType.title, color = BeezeColors.Body) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 BasicTextField(
@@ -75,14 +76,14 @@ fun RenameSongDialog(viewModel: PlayerViewModel, song: Song, onDismiss: () -> Un
                     decorationBox = { innerTextField ->
                         Box(contentAlignment = Alignment.CenterStart) {
                             if (name.isEmpty()) {
-                                Text("Display name", style = BeezeType.bodyMd, color = BeezeColors.Muted)
+                                Text(tr(R.string.display_name), style = BeezeType.bodyMd, color = BeezeColors.Muted)
                             }
                             innerTextField()
                         }
                     },
                 )
                 Text(
-                    "Only the display name in Beeze changes. The local file and its metadata stay unchanged.",
+                    tr(R.string.rename_display_explanation),
                     style = BeezeType.bodySm,
                     color = BeezeColors.Muted,
                 )
@@ -90,7 +91,7 @@ fun RenameSongDialog(viewModel: PlayerViewModel, song: Song, onDismiss: () -> Un
         },
         confirmButton = {
             Text(
-                "Save",
+                tr(R.string.save),
                 style = BeezeType.button,
                 color = if (name.isBlank()) BeezeColors.Muted else BeezeColors.Primary,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp).then(
@@ -100,7 +101,7 @@ fun RenameSongDialog(viewModel: PlayerViewModel, song: Song, onDismiss: () -> Un
         },
         dismissButton = {
             Text(
-                "Cancel",
+                tr(R.string.cancel),
                 style = BeezeType.button,
                 color = BeezeColors.Muted,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp).clickable(onClick = onDismiss),
@@ -115,20 +116,20 @@ fun SongInfoDialog(viewModel: PlayerViewModel, song: Song, onDismiss: () -> Unit
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = BeezeColors.Surface,
-        title = { Text("Song info", style = BeezeType.title, color = BeezeColors.Body) },
+        title = { Text(tr(R.string.song_info), style = BeezeType.title, color = BeezeColors.Body) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                SongInfoItem("Display name", song.title)
-                if (originalTitle != song.title) SongInfoItem("Original name", originalTitle)
-                SongInfoItem("Artist", song.artist)
-                SongInfoItem("Album", song.album)
-                SongInfoItem("Duration", formatTime(song.durationMs))
-                SongInfoItem("File path", song.path)
+                SongInfoItem(tr(R.string.display_name), song.title)
+                if (originalTitle != song.title) SongInfoItem(tr(R.string.original_name), originalTitle)
+                SongInfoItem(tr(R.string.artist), song.artist)
+                SongInfoItem(tr(R.string.album), song.album)
+                SongInfoItem(tr(R.string.duration), formatTime(song.durationMs))
+                SongInfoItem(tr(R.string.file_path), song.path)
             }
         },
         confirmButton = {
             Text(
-                "Close",
+                tr(R.string.close),
                 style = BeezeType.button,
                 color = BeezeColors.Primary,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp).clickable(onClick = onDismiss),
