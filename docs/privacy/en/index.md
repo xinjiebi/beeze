@@ -7,8 +7,8 @@ title: Beeze Privacy Policy
 
 # Beeze Privacy Policy
 
-**Last updated: November 17, 2026**  
-**Effective date: November 17, 2026**
+**Last updated: November 21, 2026**<br>
+**Effective date: November 21, 2026**
 
 Welcome to Beeze. Beeze is a local music player provided by **XJBI** (“we,” “us,” or “our”).
 
@@ -54,12 +54,13 @@ Beeze requests the following permissions only when necessary to provide the corr
 - This access is used to scan, display, and play local audio files on your device.
 - If you deny this permission, Beeze will not be able to scan or play your local music.
 
-### 2. All Files Access
+### 2. Lyrics Folder Access
 
-- This permission is used only to read `.lrc` lyrics files located in the same directories as your songs.
-- Although this system permission provides broad file access, Beeze does not use it to upload your files or to modify or delete your original lyrics files.
-- This permission is not required for basic music playback. If you deny it, you can still use features that do not require reading local `.lrc` lyrics files.
-- You can disable this permission at any time in your device settings.
+- Beeze does not request All Files Access.
+- To display local lyrics, you can select one or more folders under “About → Lyrics folders.”
+- Android’s Storage Access Framework allows Beeze to read only the folders you select, solely to find and read `.lrc` files accompanying your songs.
+- You can scan and play music, manage playlists, and search song titles without selecting a lyrics folder.
+- You can remove an authorized folder at any time under “About → Lyrics folders.” Beeze will no longer be able to read lyrics from a removed folder.
 
 ### 3. Notification Permission
 

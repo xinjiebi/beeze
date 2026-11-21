@@ -2,6 +2,8 @@ package com.beeze.music.ui
 
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -17,6 +19,8 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -43,7 +47,6 @@ import com.beeze.music.R
 import com.beeze.music.data.AppLanguage
 import com.beeze.music.data.AppLocale
 import com.beeze.music.data.AppearanceMode
-import com.beeze.music.data.LyricsRepository
 import com.beeze.music.ui.theme.BeezeColors
 import com.beeze.music.ui.theme.BeezeType
 
@@ -58,9 +61,20 @@ fun AboutScreen(viewModel: PlayerViewModel) {
     }
     val appearanceMode by viewModel.appearanceMode.collectAsStateWithLifecycle()
     val appLanguage by viewModel.appLanguage.collectAsStateWithLifecycle()
+    val lyricsFolders by viewModel.lyricsFolders.collectAsStateWithLifecycle()
     var showAppearance by remember { mutableStateOf(false) }
     var showLanguage by remember { mutableStateOf(false) }
+    var showLyricsFolders by remember { mutableStateOf(false) }
     var pendingLanguage by remember { mutableStateOf<AppLanguage?>(null) }
+    val lyricsFolderLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocumentTree()
+    ) { uri ->
+        uri?.let {
+            viewModel.addLyricsFolder(it) { count ->
+                showToast(context, context.getString(R.string.lyrics_discovery_result, count))
+            }
+        }
+    }
     BackHandler(onBack = viewModel::closeDetail)
 
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
@@ -117,12 +131,18 @@ fun AboutScreen(viewModel: PlayerViewModel) {
                 onClick = { showLanguage = true },
             )
             Spacer(Modifier.height(12.dp))
-            val lyricsGranted = LyricsRepository.canReadLyrics()
             AboutActionRow(
                 title = tr(R.string.lyrics_file_access),
-                subtitle = tr(if (lyricsGranted) R.string.lyrics_access_granted else R.string.lyrics_access_required),
-                actionLabel = tr(if (lyricsGranted) R.string.granted else R.string.authorize),
-                onClick = if (lyricsGranted) null else ({ openAllFilesAccessSettings(context) }),
+                subtitle = if (lyricsFolders.isEmpty()) {
+                    tr(R.string.lyrics_access_required)
+                } else {
+                    tr(R.string.lyrics_access_granted, lyricsFolders.size)
+                },
+                actionLabel = tr(if (lyricsFolders.isEmpty()) R.string.authorize else R.string.manage),
+                onClick = {
+                    if (lyricsFolders.isEmpty()) lyricsFolderLauncher.launch(null)
+                    else showLyricsFolders = true
+                },
             )
             Spacer(Modifier.height(12.dp))
             AboutActionRow(
@@ -139,6 +159,68 @@ fun AboutScreen(viewModel: PlayerViewModel) {
                 textAlign = TextAlign.Center,
             )
             Spacer(Modifier.height(24.dp))
+        }
+    }
+
+    if (showLyricsFolders) {
+        Dialog(onDismissRequest = { showLyricsFolders = false }) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(20.dp))
+                    .background(BeezeColors.Surface)
+                    .verticalScroll(rememberScrollState())
+                    .padding(20.dp),
+            ) {
+                Text(tr(R.string.lyrics_file_access), style = BeezeType.displayMd, color = BeezeColors.Ink)
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    tr(R.string.lyrics_folders_explanation),
+                    style = BeezeType.bodySm,
+                    color = BeezeColors.Muted,
+                )
+                Spacer(Modifier.height(12.dp))
+                lyricsFolders.forEach { folder ->
+                    Row(
+                        Modifier.fillMaxWidth().padding(vertical = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            folder.name,
+                            style = BeezeType.bodyMd,
+                            color = BeezeColors.Body,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Spacer(Modifier.size(12.dp))
+                        Text(
+                            tr(R.string.remove),
+                            style = BeezeType.caption,
+                            color = BeezeColors.Primary,
+                            modifier = Modifier.iconClickable {
+                                viewModel.removeLyricsFolder(folder.treeUri)
+                            },
+                        )
+                    }
+                }
+                Button(
+                    onClick = { lyricsFolderLauncher.launch(null) },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(24.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = BeezeColors.Primary),
+                ) {
+                    Text(tr(R.string.add_lyrics_folder), style = BeezeType.button, color = BeezeColors.Surface)
+                }
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    tr(R.string.done),
+                    style = BeezeType.button,
+                    color = BeezeColors.Primary,
+                    modifier = Modifier
+                        .align(Alignment.End)
+                        .iconClickable { showLyricsFolders = false }
+                        .padding(8.dp),
+                )
+            }
         }
     }
 

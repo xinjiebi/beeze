@@ -1,9 +1,6 @@
 package com.beeze.music.ui
 
 import android.content.Context
-import android.content.Intent
-import android.net.Uri
-import android.provider.Settings
 import android.widget.Toast
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.LinearEasing
@@ -97,33 +94,6 @@ fun Modifier.iconClickable(onClick: () -> Unit): Modifier {
             onClick()
         },
     )
-}
-
-/**
- * 打开「所有文件访问」设置页（歌词 .lrc 读取需要）。
- * 各 ROM 对包名直达支持不一（MIUI 等会直接打不开），逐级降级：
- * 包名直达 → 权限列表页 → 应用详情页，保证用户至少能找到入口。
- */
-fun openAllFilesAccessSettings(context: Context) {
-    val intents = listOf(
-        Intent(
-            Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
-            Uri.parse("package:${context.packageName}"),
-        ),
-        Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION),
-        Intent(
-            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-            Uri.parse("package:${context.packageName}"),
-        ),
-    )
-    for (intent in intents) {
-        try {
-            context.startActivity(intent)
-            return
-        } catch (e: Exception) {
-            // 当前 ROM 不支持该入口，尝试下一级
-        }
-    }
 }
 
 /** mm:ss 格式化 */

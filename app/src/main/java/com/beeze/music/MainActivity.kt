@@ -6,7 +6,6 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
-import android.os.Environment
 import android.view.ViewGroup
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -61,7 +60,6 @@ import com.beeze.music.ui.HomeScreen
 import com.beeze.music.ui.DetailScreen
 import com.beeze.music.ui.LibraryScanScreen
 import com.beeze.music.ui.LyricThemes
-import com.beeze.music.ui.openAllFilesAccessSettings
 import com.beeze.music.ui.PlayerContentCache
 import com.beeze.music.ui.PlayerScreen
 import com.beeze.music.ui.QueueSheet
@@ -146,38 +144,38 @@ fun BeezeApp(viewModel: PlayerViewModel, darkTheme: Boolean) {
     }
     val playerContentCache = remember { PlayerContentCache() }
 
-    // 授权策略：API 30+ 直接引导开启「所有文件访问」——一个权限同时覆盖音频扫描与
-    // .lrc 歌词读取，不再先弹音频权限再接力跳设置页；API 30 以下走 READ_EXTERNAL_STORAGE 弹窗
-    val needsAllFiles = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R
+    // 音乐扫描只申请普通媒体权限；歌词目录由用户在关于页单独授权。
+    val audioPermission = if (Build.VERSION.SDK_INT >= 33) {
+        Manifest.permission.READ_MEDIA_AUDIO
+    } else {
+        Manifest.permission.READ_EXTERNAL_STORAGE
+    }
 
     // 通知权限只影响后台播放通知的展示，拒绝不阻塞主流程（fire-and-forget）
     val notificationLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
     ) { }
-    // API 30 以下的存储权限弹窗
-    val legacyStorageLauncher = rememberLauncherForActivityResult(
+    val audioPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { granted -> viewModel.onPermissionResult(granted) }
+    ) { granted ->
+        viewModel.onPermissionResult(granted)
+        if (granted && Build.VERSION.SDK_INT >= 33) {
+            notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
 
-    // 启动时与每次回到前台都重新检查授权（用户可能刚从设置页开完开关返回）
+    // 启动时与每次回到前台都重新检查音乐权限。
     val lifecycleOwner = LocalLifecycleOwner.current
     var initialPermissionCheck by remember { mutableStateOf(true) }
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 viewModel.onForeground()
-                val granted = if (needsAllFiles) {
-                    Environment.isExternalStorageManager()
-                } else {
-                    ContextCompat.checkSelfPermission(
-                        context, Manifest.permission.READ_EXTERNAL_STORAGE
-                    ) == PackageManager.PERMISSION_GRANTED
-                }
+                val granted = ContextCompat.checkSelfPermission(
+                    context, audioPermission
+                ) == PackageManager.PERMISSION_GRANTED
                 if (granted != viewModel.hasPermission.value) {
                     viewModel.onPermissionResult(granted, initialCheck = initialPermissionCheck)
-                    if (granted && Build.VERSION.SDK_INT >= 33) {
-                        notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                    }
                 }
                 initialPermissionCheck = false
             }
@@ -188,13 +186,7 @@ fun BeezeApp(viewModel: PlayerViewModel, darkTheme: Boolean) {
 
     when {
         !hasPermission -> PermissionGuide(
-            onRequest = {
-                if (needsAllFiles) {
-                    openAllFilesAccessSettings(context)
-                } else {
-                    legacyStorageLauncher.launch(Manifest.permission.READ_EXTERNAL_STORAGE)
-                }
-            }
+            onRequest = { audioPermissionLauncher.launch(audioPermission) }
         )
         scanOpen -> LibraryScanScreen(viewModel)
         detailPage != null -> DetailScreen(viewModel, detailPage!!)

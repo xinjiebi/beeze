@@ -3,6 +3,7 @@ package com.beeze.music
 import android.app.Application
 import android.content.ComponentName
 import android.content.ContentUris
+import android.net.Uri
 import android.os.SystemClock
 import androidx.core.content.ContextCompat
 import androidx.annotation.StringRes
@@ -24,6 +25,7 @@ import com.beeze.music.data.FilteredFolder
 import com.beeze.music.data.FolderItem
 import com.beeze.music.data.ForYouCovers
 import com.beeze.music.data.ListeningStore
+import com.beeze.music.data.LyricsFolder
 import com.beeze.music.data.LyricsRepository
 import com.beeze.music.data.MediaStoreRepository
 import com.beeze.music.data.Playlist
@@ -243,9 +245,33 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     // ---------- For you 页派生数据 ----------
 
+    private val _lyricsFolders = MutableStateFlow<List<LyricsFolder>>(emptyList())
+    val lyricsFolders: StateFlow<List<LyricsFolder>> = _lyricsFolders
+
     /** 有配套 .lrc 歌词的歌曲（Lyric Sync 卡片） */
     private val _lyricSongs = MutableStateFlow<List<Song>>(emptyList())
     val lyricSongs: StateFlow<List<Song>> = _lyricSongs
+    private val _lyricsRevision = MutableStateFlow(0L)
+    val lyricsRevision: StateFlow<Long> = _lyricsRevision
+    private var lyricsJob: Job? = null
+
+    fun addLyricsFolder(treeUri: Uri, onDiscovered: ((Int) -> Unit)? = null) {
+        viewModelScope.launch {
+            val added = withContext(Dispatchers.IO) { LyricsRepository.addFolder(treeUri) }
+            if (added) {
+                _lyricsFolders.value = withContext(Dispatchers.IO) { LyricsRepository.folders() }
+                refreshLyrics(reloadFiles = true, onDiscovered = onDiscovered)
+            }
+        }
+    }
+
+    fun removeLyricsFolder(treeUri: Uri) {
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) { LyricsRepository.removeFolder(treeUri) }
+            _lyricsFolders.value = withContext(Dispatchers.IO) { LyricsRepository.folders() }
+            refreshLyrics(reloadFiles = true)
+        }
+    }
 
     private val _likedSongs = MutableStateFlow<List<Song>>(emptyList())
     val likedSongs: StateFlow<List<Song>> = _likedSongs
@@ -288,6 +314,10 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private val songByMediaId = mutableMapOf<String, Song>()
 
     init {
+        LyricsRepository.initialize(application)
+        viewModelScope.launch {
+            _lyricsFolders.value = withContext(Dispatchers.IO) { LyricsRepository.folders() }
+        }
         connectController()
         startPositionTicker()
         // 冷启动同步读缓存（~80KB 小文件，主线程 <100ms），首帧直接渲染列表
@@ -425,7 +455,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 val list = repository.querySongs { scanned, total ->
                     _scanProgress.value = ScanProgress(scanned, total)
                 }
-                if (list != _songs.value || !_libraryLoaded.value) applySongs(list)
+                if (list != _songs.value || !_libraryLoaded.value) {
+                    applySongs(list, reloadLyrics = true)
+                } else {
+                    refreshLyrics(reloadFiles = true)
+                }
                 if (list.isNotEmpty()) repository.saveCachedSongs(list)
                 if (_scanOpen.value) {
                     _scanResult.value = ScanResult(
@@ -439,7 +473,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    private fun applySongs(list: List<Song>) {
+    private fun applySongs(list: List<Song>, reloadLyrics: Boolean = false) {
         val displayList = songTitleStore.apply(list)
         _songs.value = displayList
         _folders.value = repository.groupByFolder(displayList)
@@ -450,12 +484,20 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         refreshForYou()
         // Featured 只在冷启动媒体库加载时刷新一次（进入 For you 页不再实时刷新）
         refreshFeatured()
-        // 歌词文件探测走 IO（每首歌一次 exists 检查），不阻塞首帧
-        viewModelScope.launch {
-            _lyricSongs.value = withContext(Dispatchers.IO) {
-                if (LyricsRepository.canReadLyrics()) displayList.filter { LyricsRepository.hasLrc(it) }
-                else emptyList()
+        refreshLyrics(reloadFiles = reloadLyrics)
+    }
+
+    private fun refreshLyrics(reloadFiles: Boolean, onDiscovered: ((Int) -> Unit)? = null) {
+        lyricsJob?.cancel()
+        val songs = _songs.value
+        lyricsJob = viewModelScope.launch {
+            val matches = withContext(Dispatchers.IO) {
+                LyricsRepository.rebuildIndex(songs, reloadFiles)
+                songs.filter(LyricsRepository::hasLrc)
             }
+            _lyricSongs.value = matches
+            _lyricsRevision.value++
+            onDiscovered?.invoke(matches.size)
             refreshCardCovers()
         }
     }

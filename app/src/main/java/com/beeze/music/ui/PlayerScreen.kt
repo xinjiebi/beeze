@@ -4,6 +4,8 @@ import android.graphics.Bitmap
 import android.graphics.drawable.BitmapDrawable
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
@@ -72,6 +74,7 @@ private val OnDarkAccent @Composable get() = BeezeColors.PlayerAccent
 
 class PlayerContentCache {
     var loadedSongId: Long? = null
+    var lyricsRevision: Long = -1L
     var lrc: String = ""
     var hasLyrics: Boolean = false
     var cover: Bitmap? = null
@@ -96,6 +99,8 @@ fun PlayerScreen(
     val positionMs by viewModel.positionMs.collectAsStateWithLifecycle()
     val durationMs by viewModel.durationMs.collectAsStateWithLifecycle()
     val likedIds by viewModel.likedIds.collectAsStateWithLifecycle()
+    val lyricsFolders by viewModel.lyricsFolders.collectAsStateWithLifecycle()
+    val lyricsRevision by viewModel.lyricsRevision.collectAsStateWithLifecycle()
 
     val song = currentSong ?: run {
         // 删除最后一首等导致队列为空时，不停留在空白播放页
@@ -105,6 +110,15 @@ fun PlayerScreen(
     }
     val rotation by rememberCoverRotation(isPlaying)
     val context = LocalContext.current
+    val lyricsFolderLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocumentTree()
+    ) { uri ->
+        uri?.let {
+            viewModel.addLyricsFolder(it) { count ->
+                showToast(context, context.getString(R.string.lyrics_discovery_result, count))
+            }
+        }
+    }
 
     var lyricEffectsOpen by remember { mutableStateOf(false) }
     var sleepTimerOpen by remember { mutableStateOf(false) }
@@ -115,8 +129,8 @@ fun PlayerScreen(
     // null = 歌词加载中，true = 有歌词（隐藏封面），false = 无歌词（显示封面）
     var hasLyrics by remember { mutableStateOf<Boolean?>(null) }
 
-    LaunchedEffect(song.id) {
-        if (contentCache.loadedSongId == song.id) {
+    LaunchedEffect(song.id, lyricsRevision) {
+        if (contentCache.loadedSongId == song.id && contentCache.lyricsRevision == lyricsRevision) {
             hasLyrics = contentCache.hasLyrics
             lyricView.setPlaybackState(viewModel.positionMs.value, isPlaying)
             return@LaunchedEffect
@@ -136,6 +150,7 @@ fun PlayerScreen(
         val cover = ((result as? SuccessResult)?.drawable as? BitmapDrawable)?.bitmap
         lyricView.setCover(cover)
         contentCache.loadedSongId = song.id
+        contentCache.lyricsRevision = lyricsRevision
         contentCache.lrc = lrc
         contentCache.hasLyrics = hasLyrics == true
         contentCache.cover = cover
@@ -311,7 +326,10 @@ fun PlayerScreen(
                     PlayerActionIcon(R.drawable.ic_timer, tr(R.string.sleep_timer)) { sleepTimerOpen = true }
                 }
                 PlayerActionIcon(R.drawable.ic_add_playlist, tr(R.string.add_to_playlist)) { addPlaylistOpen = true }
-                PlayerActionIcon(R.drawable.ic_lyrics, tr(R.string.lyric_effects)) { lyricEffectsOpen = true }
+                PlayerActionIcon(R.drawable.ic_lyrics, tr(R.string.lyric_effects)) {
+                    if (lyricsFolders.isEmpty()) lyricsFolderLauncher.launch(null)
+                    else lyricEffectsOpen = true
+                }
                 PlayerActionIcon(R.drawable.ic_player_more, tr(R.string.more)) { moreOpen = true }
             }
 

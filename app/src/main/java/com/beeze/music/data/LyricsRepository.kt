@@ -1,44 +1,106 @@
 package com.beeze.music.data
 
-import android.os.Build
-import android.os.Environment
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.provider.DocumentsContract
 import java.io.File
+import java.util.Locale
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 
-/**
- * 歌词仓库：读取音频同目录下的同名 .lrc 文件。
- * API 30+ 读取非媒体文件需要 MANAGE_EXTERNAL_STORAGE（设置页手动开启），
- * 无权限或无文件时返回 null，播放页显示无歌词态。
- */
+data class LyricsFolder(val treeUri: Uri, val name: String)
+
+/** 歌词仓库：在用户授权的 SAF 目录中建立 LRC 索引，再按歌曲路径匹配。 */
 object LyricsRepository {
+    private const val PREFS = "lyrics_folders"
+    private const val KEY_TREES = "trees"
+    private lateinit var appContext: Context
+    private val indexMutex = Mutex()
+    @Volatile private var lyricIndex: Map<String, Uri> = emptyMap()
+    private var scannedFiles: List<LyricFile> = emptyList()
+    private var scannedFolderSignature = ""
 
-    /** 是否已具备读取歌词文件的权限 */
-    fun canReadLyrics(): Boolean =
-        Build.VERSION.SDK_INT < Build.VERSION_CODES.R || Environment.isExternalStorageManager()
+    fun initialize(context: Context) {
+        appContext = context.applicationContext
+    }
 
-    /** 歌词候选文件：优先「同名.lrc」，其次「同名-歌词.lrc」 */
-    private fun lrcFile(song: Song): File? {
-        if (!canReadLyrics()) return null
-        val audio = File(song.path)
-        val dir = audio.parentFile ?: return null
-        val base = audio.nameWithoutExtension
-        val candidates = listOf(
-            File(dir, "$base.lrc"),
-            File(dir, "$base-歌词.lrc"),
+    fun canReadLyrics(): Boolean = folders().isNotEmpty()
+
+    fun folders(): List<LyricsFolder> {
+        val persisted = appContext.contentResolver.persistedUriPermissions
+            .filter { it.isReadPermission }
+            .mapTo(mutableSetOf()) { it.uri.toString() }
+        return savedTreeUris()
+            .filter { it.toString() in persisted }
+            .map { LyricsFolder(it, folderName(it)) }
+    }
+
+    fun addFolder(treeUri: Uri): Boolean = runCatching {
+        appContext.contentResolver.takePersistableUriPermission(
+            treeUri,
+            Intent.FLAG_GRANT_READ_URI_PERMISSION,
         )
-        return candidates.firstOrNull { it.isFile }
+        val trees = savedTreeUris().mapTo(mutableSetOf()) { it.toString() }
+        trees += treeUri.toString()
+        preferences().edit().putStringSet(KEY_TREES, trees).apply()
+        true
+    }.getOrDefault(false)
+
+    fun removeFolder(treeUri: Uri) {
+        val trees = savedTreeUris().mapTo(mutableSetOf()) { it.toString() }
+        trees -= treeUri.toString()
+        preferences().edit().putStringSet(KEY_TREES, trees).apply()
+        runCatching {
+            appContext.contentResolver.releasePersistableUriPermission(
+                treeUri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION,
+            )
+        }
     }
 
-    /** 该歌曲是否有配套歌词文件（For you 页 Lyric Sync 卡片用） */
-    fun hasLrc(song: Song): Boolean = lrcFile(song) != null
+    suspend fun rebuildIndex(songs: List<Song>, reloadFiles: Boolean = false) =
+        withContext(Dispatchers.IO) {
+            indexMutex.withLock {
+                val folders = folders()
+                if (folders.isEmpty()) {
+                    scannedFiles = emptyList()
+                    scannedFolderSignature = ""
+                    lyricIndex = emptyMap()
+                    return@withLock
+                }
+                val signature = folders.map { it.treeUri.toString() }.sorted().joinToString("|")
+                if (reloadFiles || signature != scannedFolderSignature) {
+                    scannedFiles = folders.flatMap { scanTree(it.treeUri) }
+                    scannedFolderSignature = signature
+                }
+                val candidates = scannedFiles
+                    .groupBy { songKey(it.directoryPath, it.baseName) }
+                    .mapValues { (_, files) ->
+                        files.minWithOrNull(compareBy<LyricFile> { it.priority }.thenBy { it.uri.toString() })!!.uri
+                    }
+                lyricIndex = buildMap {
+                    songs.forEach { song ->
+                        candidates[songKey(song.path)]?.let { put(song.path, it) }
+                    }
+                }
+            }
+        }
 
-    /** 查找并读取歌词；过滤外语歌的中文翻译行 */
-    fun loadLrc(song: Song): String? = lrcFile(song)?.let { file ->
-        runCatching { filterTranslation(file.readText(Charsets.UTF_8)) }.getOrNull()
+    fun hasLrc(song: Song): Boolean = song.path in lyricIndex
+
+    fun loadLrc(song: Song): String? = lyricIndex[song.path]?.let { uri ->
+        runCatching {
+            appContext.contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use {
+                filterTranslation(it.readText())
+            }
+        }.getOrNull()
     }
 
-    /** 返回首行包含关键词的歌词正文，去除时间戳与逐字时间标签 */
     fun findMatchingLine(song: Song, query: String): String? {
-        if (query.isBlank()) return null
+        if (query.isBlank() || !hasLrc(song)) return null
         return loadLrc(song)?.lineSequence()
             ?.map { line ->
                 val text = lineRegex.find(line)?.groupValues?.get(2) ?: line
@@ -46,6 +108,110 @@ object LyricsRepository {
             }
             ?.firstOrNull { it.contains(query, ignoreCase = true) }
     }
+
+    private data class LyricFile(
+        val uri: Uri,
+        val directoryPath: String,
+        val baseName: String,
+        val priority: Int,
+    )
+
+    private data class TraversalDirectory(val documentId: String, val relativePath: String)
+
+    private fun scanTree(treeUri: Uri): List<LyricFile> {
+        val rootPath = rootPath(treeUri) ?: return emptyList()
+        val rootDocumentId = DocumentsContract.getTreeDocumentId(treeUri)
+        val pending = ArrayDeque<TraversalDirectory>()
+        pending += TraversalDirectory(rootDocumentId, "")
+        val result = mutableListOf<LyricFile>()
+        while (pending.isNotEmpty()) {
+            val directory = pending.removeFirst()
+            val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(
+                treeUri,
+                directory.documentId,
+            )
+            val cursor = runCatching {
+                appContext.contentResolver.query(
+                    childrenUri,
+                    arrayOf(
+                        DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+                        DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                        DocumentsContract.Document.COLUMN_MIME_TYPE,
+                    ),
+                    null,
+                    null,
+                    null,
+                )
+            }.getOrNull() ?: continue
+            cursor.use {
+                val idColumn = it.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+                val nameColumn = it.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+                val mimeColumn = it.getColumnIndexOrThrow(DocumentsContract.Document.COLUMN_MIME_TYPE)
+                while (it.moveToNext()) {
+                    val documentId = it.getString(idColumn)
+                    val name = it.getString(nameColumn) ?: continue
+                    if (it.getString(mimeColumn) == DocumentsContract.Document.MIME_TYPE_DIR) {
+                        val relativePath = listOf(directory.relativePath, name)
+                            .filter(String::isNotEmpty)
+                            .joinToString("/")
+                        pending += TraversalDirectory(documentId, relativePath)
+                    } else if (name.endsWith(".lrc", ignoreCase = true)) {
+                        val translated = name.substringBeforeLast('.').endsWith("-歌词", ignoreCase = true)
+                        val baseName = name.substringBeforeLast('.').let { base ->
+                            if (translated) base.dropLast(3) else base
+                        }
+                        result += LyricFile(
+                            uri = DocumentsContract.buildDocumentUriUsingTree(treeUri, documentId),
+                            directoryPath = File(rootPath, directory.relativePath).path,
+                            baseName = baseName,
+                            priority = if (translated) 1 else 0,
+                        )
+                    }
+                }
+            }
+        }
+        return result
+    }
+
+    private fun rootPath(treeUri: Uri): String? {
+        val documentId = runCatching { DocumentsContract.getTreeDocumentId(treeUri) }.getOrNull()
+            ?: return null
+        val volume = documentId.substringBefore(':', "")
+        if (volume.isEmpty()) return null
+        val storageRoot = if (volume == "primary") "/storage/emulated/0" else "/storage/$volume"
+        val relativePath = documentId.substringAfter(':', "")
+        return File(storageRoot, relativePath).path
+    }
+
+    private fun folderName(treeUri: Uri): String {
+        val documentId = DocumentsContract.getTreeDocumentId(treeUri)
+        val documentUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, documentId)
+        return runCatching {
+            appContext.contentResolver.query(
+                documentUri,
+                arrayOf(DocumentsContract.Document.COLUMN_DISPLAY_NAME),
+                null,
+                null,
+                null,
+            )?.use { cursor ->
+                if (cursor.moveToFirst() && !cursor.isNull(0)) cursor.getString(0) else null
+            }
+        }.getOrNull() ?: documentId.substringAfter(':').ifBlank { documentId }
+    }
+
+    private fun savedTreeUris(): List<Uri> = preferences().getStringSet(KEY_TREES, emptySet())
+        .orEmpty()
+        .map(Uri::parse)
+
+    private fun preferences() = appContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+
+    private fun songKey(path: String): String = songKey(
+        path.substringBeforeLast('/', ""),
+        path.substringAfterLast('/').substringBeforeLast('.'),
+    )
+
+    private fun songKey(directory: String, baseName: String): String =
+        directory.trimEnd('/') + "/" + baseName.lowercase(Locale.ROOT)
 
     /** 一行 LRC：时间戳前缀 + 正文（兼容增强 LRC 的逐字时间标签） */
     private val lineRegex = Regex("^((?:\\[[^\\]]+\\])+)(.*)$")

@@ -167,14 +167,17 @@
     <string name="background_mosaic">点阵马赛克</string>
     <string name="background_oil">油画</string>
 
-    <string name="permission_title">需要所有文件访问权限</string>
-    <string name="permission_message">Beeze 需要访问本地音乐和 .lrc 歌词文件。\n请打开系统设置，允许所有文件访问，然后返回 Beeze。</string>
+    <string name="permission_title">需要音乐和音频权限</string>
+    <string name="permission_message">Beeze 需要音乐和音频权限来查找并播放此设备中的音乐。\n你可以稍后单独选择歌词文件夹。</string>
     <string name="authorize">去授权</string>
     <string name="version_format">版本 %1$s</string>
-    <string name="lyrics_file_access">歌词文件访问</string>
-    <string name="lyrics_access_granted">已允许读取歌曲文件夹中的 .lrc 文件</string>
-    <string name="lyrics_access_required">读取 .lrc 歌词需要所有文件访问权限</string>
-    <string name="granted">已授权</string>
+    <string name="lyrics_file_access">歌词文件夹</string>
+    <string name="lyrics_access_granted">已选择 %1$d 个文件夹用于匹配本地 .lrc 歌词</string>
+    <string name="lyrics_access_required">选择文件夹以自动匹配本地 .lrc 歌词</string>
+    <string name="lyrics_folders_explanation">Beeze 只能读取你选择的文件夹中的 .lrc 文件。不授权歌词文件夹也不影响音乐播放。</string>
+    <string name="lyrics_discovery_result">发现 %1$d 首歌曲的本地歌词</string>
+    <string name="add_lyrics_folder">添加歌词文件夹</string>
+    <string name="remove">移除</string>
     <string name="privacy_policy">隐私政策</string>
     <string name="privacy_subtitle">了解权限、数据存储与删除方式</string>
     <string name="read">查看</string>

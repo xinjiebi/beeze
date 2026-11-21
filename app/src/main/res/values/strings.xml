@@ -168,14 +168,17 @@
     <string name="background_mosaic">Dot mosaic</string>
     <string name="background_oil">Oil painting</string>
 
-    <string name="permission_title">All files access required</string>
-    <string name="permission_message">Beeze needs access to local music and .lrc lyrics files.\nOpen system settings, enable all files access, then return to Beeze.</string>
+    <string name="permission_title">Music and audio access required</string>
+    <string name="permission_message">Beeze needs permission to find and play music stored on this device.\nYou can select lyrics folders separately later.</string>
     <string name="authorize">Authorize</string>
     <string name="version_format">Version %1$s</string>
-    <string name="lyrics_file_access">Lyrics file access</string>
-    <string name="lyrics_access_granted">Allowed to read .lrc files in song folders</string>
-    <string name="lyrics_access_required">All files access is required to read .lrc lyrics</string>
-    <string name="granted">Granted</string>
+    <string name="lyrics_file_access">Lyrics folders</string>
+    <string name="lyrics_access_granted">%1$d folder(s) selected for local .lrc lyrics</string>
+    <string name="lyrics_access_required">Select folders to automatically match local .lrc lyrics</string>
+    <string name="lyrics_folders_explanation">Beeze can read .lrc files only in the folders you select. Music playback works without this access.</string>
+    <string name="lyrics_discovery_result">Found local lyrics for %1$d song(s)</string>
+    <string name="add_lyrics_folder">Add lyrics folder</string>
+    <string name="remove">Remove</string>
     <string name="privacy_policy">Privacy Policy</string>
     <string name="privacy_subtitle">Learn about permissions, data storage, and deletion</string>
     <string name="read">Read</string>
