@@ -62,6 +62,8 @@ fun AboutScreen(viewModel: PlayerViewModel) {
     val appearanceMode by viewModel.appearanceMode.collectAsStateWithLifecycle()
     val appLanguage by viewModel.appLanguage.collectAsStateWithLifecycle()
     val lyricsFolders by viewModel.lyricsFolders.collectAsStateWithLifecycle()
+    val adsManager = (context.applicationContext as com.beeze.music.BeezeApplication).adsManager
+    val privacyOptionsRequired by adsManager.privacyOptionsRequired.collectAsStateWithLifecycle()
     var showAppearance by remember { mutableStateOf(false) }
     var showLanguage by remember { mutableStateOf(false) }
     var showLyricsFolders by remember { mutableStateOf(false) }
@@ -151,6 +153,15 @@ fun AboutScreen(viewModel: PlayerViewModel) {
                 actionLabel = tr(R.string.read),
                 onClick = { viewModel.openDetail(DetailPage.Privacy) },
             )
+            if (privacyOptionsRequired) {
+                Spacer(Modifier.height(12.dp))
+                AboutActionRow(
+                    title = tr(R.string.ad_privacy_options),
+                    subtitle = tr(R.string.ad_privacy_subtitle),
+                    actionLabel = tr(R.string.manage),
+                    onClick = { adsManager.showPrivacyOptions(context as ComponentActivity) },
+                )
+            }
             Spacer(Modifier.height(24.dp))
             Text(
                 tr(R.string.local_music_only),

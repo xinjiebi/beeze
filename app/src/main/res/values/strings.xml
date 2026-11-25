@@ -171,6 +171,12 @@
     <string name="permission_title">Music and audio access required</string>
     <string name="permission_message">Beeze needs permission to find and play music stored on this device.\nYou can select lyrics folders separately later.</string>
     <string name="authorize">Authorize</string>
+    <string name="open_settings">Open Settings</string>
+    <string name="permission_settings_message">Music access has been disabled. Allow it in Settings to scan and play your music.</string>
+    <string name="scan_failed">Unable to scan music</string>
+    <string name="scan_failed_description">Beeze couldn’t read your music library. Your existing songs are still here. Check music access and try again.</string>
+    <string name="retry">Retry</string>
+    <string name="playback_failed">Can’t play “%1$s”. Try again or play the next song.</string>
     <string name="version_format">Version %1$s</string>
     <string name="lyrics_file_access">Lyrics folders</string>
     <string name="lyrics_access_granted">%1$d folder(s) selected for local .lrc lyrics</string>
@@ -180,9 +186,12 @@
     <string name="add_lyrics_folder">Add lyrics folder</string>
     <string name="remove">Remove</string>
     <string name="privacy_policy">Privacy Policy</string>
-    <string name="privacy_subtitle">Learn about permissions, data storage, and deletion</string>
+    <string name="privacy_subtitle">Learn about permissions, local data, and advertising</string>
+    <string name="advertisement">Ad</string>
+    <string name="ad_privacy_options">Ad privacy options</string>
+    <string name="ad_privacy_subtitle">Manage personalized ads and your consent choices</string>
     <string name="read">Read</string>
-    <string name="local_music_only">Local music, stored only on this device</string>
+    <string name="local_music_only">Music stays on your device; ads are provided by Google</string>
     <string name="beeze_app_icon">Beeze app icon</string>
     <string name="appearance">Appearance</string>
     <string name="appearance_subtitle">Follow the system or choose a light or dark theme</string>

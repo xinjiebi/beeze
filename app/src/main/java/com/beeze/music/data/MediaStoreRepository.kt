@@ -76,48 +76,44 @@ class MediaStoreRepository(private val context: Context) {
         // 本地化排序在内存中完成
         val sortOrder = "${MediaStore.Audio.Media.TITLE} ASC"
 
-        val cursor = try {
-            context.contentResolver.query(collection, projection, selection, null, sortOrder)
-        } catch (e: Exception) {
-            null
-        }
-        cursor
-            ?.use { cursor ->
-                val idCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
-                val titleCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
-                val artistCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
-                val albumCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
-                val albumIdCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM_ID)
-                val durationCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
-                val dataCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA)
-                val dateAddedCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_ADDED)
-                val total = cursor.count
-                var scanned = 0
-                while (cursor.moveToNext()) {
-                    val id = cursor.getLong(idCol)
-                    val path = cursor.getString(dataCol)
-                    val durationMs = cursor.getLong(durationCol)
-                    if (path != null && !filterStore.contains(id, path) &&
-                        (!skipShortAudio || durationMs >= 60_000L)
-                    ) {
-                        songs += Song(
-                            id = id,
-                            title = cursor.getString(titleCol) ?: context.getString(R.string.unknown_title),
-                            artist = cursor.getString(artistCol)?.takeIf { it != "<unknown>" }
-                                ?: context.getString(R.string.unknown_artist),
-                            album = cursor.getString(albumCol)?.takeIf { it != "<unknown>" }
-                                ?: context.getString(R.string.unknown_album),
-                            albumId = cursor.getLong(albumIdCol),
-                            durationMs = durationMs,
-                            contentUri = ContentUris.withAppendedId(collection, id),
-                            path = path,
-                            dateAddedSeconds = cursor.getLong(dateAddedCol),
-                        )
-                    }
-                    scanned++
-                    if (scanned == total || scanned % 4 == 0) onProgress(scanned, total)
+        val cursor = context.contentResolver.query(collection, projection, selection, null, sortOrder)
+            ?: throw java.io.IOException("MediaStore returned no cursor")
+        cursor.use { cursor ->
+            val idCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media._ID)
+            val titleCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.TITLE)
+            val artistCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
+            val albumCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM)
+            val albumIdCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM_ID)
+            val durationCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
+            val dataCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATA)
+            val dateAddedCol = cursor.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_ADDED)
+            val total = cursor.count
+            var scanned = 0
+            while (cursor.moveToNext()) {
+                val id = cursor.getLong(idCol)
+                val path = cursor.getString(dataCol)
+                val durationMs = cursor.getLong(durationCol)
+                if (path != null && !filterStore.contains(id, path) &&
+                    (!skipShortAudio || durationMs >= 60_000L)
+                ) {
+                    songs += Song(
+                        id = id,
+                        title = cursor.getString(titleCol) ?: context.getString(R.string.unknown_title),
+                        artist = cursor.getString(artistCol)?.takeIf { it != "<unknown>" }
+                            ?: context.getString(R.string.unknown_artist),
+                        album = cursor.getString(albumCol)?.takeIf { it != "<unknown>" }
+                            ?: context.getString(R.string.unknown_album),
+                        albumId = cursor.getLong(albumIdCol),
+                        durationMs = durationMs,
+                        contentUri = ContentUris.withAppendedId(collection, id),
+                        path = path,
+                        dateAddedSeconds = cursor.getLong(dateAddedCol),
+                    )
                 }
+                scanned++
+                if (scanned == total || scanned % 4 == 0) onProgress(scanned, total)
             }
+        }
         // 本地化排序放在内存中做（中文按拼音、英文按字母混排 A→Z，非字母开头的 # 组排最后），
         // 兼容不支持 COLLATE LOCALIZED 的 ROM
         songs.sortWith(compareBy { sortKeyOf(it.title) })

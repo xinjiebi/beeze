@@ -135,6 +135,7 @@ internal fun ForYouContent(viewModel: PlayerViewModel, isPageSettled: Boolean) {
                 onPlay = { viewModel.playSongs(featuredSongs, it, openPlayer = true) },
                 onPlayAll = { viewModel.playSongs(featuredSongs, 0) },
             )
+            ListNativeAd("home_for_you")
         }
         PlaylistSection(
             playlists = playlists,

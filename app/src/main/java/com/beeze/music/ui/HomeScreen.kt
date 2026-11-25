@@ -77,6 +77,14 @@ import kotlinx.coroutines.delay
 /** 主页：Navbar + 标签行 + 列表内容 + 底部悬浮 MiniPlayer */
 @Composable
 fun HomeScreen(viewModel: PlayerViewModel) {
+    val context = LocalContext.current
+    val adsManager = (context.applicationContext as com.beeze.music.BeezeApplication).adsManager
+    val adsReady by adsManager.adsReady.collectAsStateWithLifecycle()
+    LaunchedEffect(adsReady) {
+        if (adsReady) {
+            adsManager.preloadHomeAds((context.resources.configuration.screenWidthDp - 40).coerceAtLeast(1))
+        }
+    }
     val selectedTab by viewModel.selectedTab.collectAsStateWithLifecycle()
     val songs by viewModel.songs.collectAsStateWithLifecycle()
     val folders by viewModel.folders.collectAsStateWithLifecycle()
@@ -87,6 +95,7 @@ fun HomeScreen(viewModel: PlayerViewModel) {
     val libraryLoaded by viewModel.libraryLoaded.collectAsStateWithLifecycle()
     val scanning by viewModel.scanning.collectAsStateWithLifecycle()
     val initialHomeScan by viewModel.initialHomeScan.collectAsStateWithLifecycle()
+    val scanError by viewModel.scanError.collectAsStateWithLifecycle()
     val scanProgress by viewModel.scanProgress.collectAsStateWithLifecycle()
     val absorbProgress = remember(initialHomeScan) { Animatable(0f) }
     val scanButtonPulse = remember { Animatable(1f) }
@@ -97,8 +106,8 @@ fun HomeScreen(viewModel: PlayerViewModel) {
         animationSpec = tween(500),
         label = "initialHomeScanContent",
     )
-    LaunchedEffect(initialHomeScan, scanning, libraryLoaded) {
-        if (initialHomeScan && !scanning && libraryLoaded) {
+    LaunchedEffect(initialHomeScan, scanning, libraryLoaded, scanError) {
+        if (initialHomeScan && !scanning && libraryLoaded && !scanError) {
             delay(250)
             absorbProgress.animateTo(1f, tween(650, easing = FastOutSlowInEasing))
             scanButtonPulse.animateTo(1.3f, tween(100))
@@ -232,7 +241,8 @@ fun HomeScreen(viewModel: PlayerViewModel) {
                             .padding(bottom = 56.dp)
                             .graphicsLayer { alpha = 1f - absorbProgress.value },
                     ) {
-                        ScanProgress(scanProgress.scanned, scanProgress.total)
+                        if (scanError) ScanError(viewModel::loadSongs)
+                        else ScanProgress(scanProgress.scanned, scanProgress.total)
                     }
                 }
             }
@@ -404,9 +414,15 @@ private fun SongsContent(
     onMultiSelect: () -> Unit,
 ) {
     val context = LocalContext.current
+    val adsManager = (context.applicationContext as com.beeze.music.BeezeApplication).adsManager
+    val adsReady by adsManager.adsReady.collectAsStateWithLifecycle()
     val sortOptions by viewModel.sortOptions.collectAsStateWithLifecycle()
     val sortOption = sortOptions[SongSortScope.Songs] ?: SongSortOption.Default
     val sortedSongs = remember(songs, sortOption) { songs.sortedForDisplay(sortOption) }
+    val adIndices = remember(sortedSongs) { adInsertionIndices(sortedSongs.size, 7, sortedSongs.hashCode()) }
+    LaunchedEffect(adsReady, adIndices) {
+        if (adsReady) adsManager.preloadNativeAds("home_songs", adIndices)
+    }
     var showSortSheet by remember { mutableStateOf(false) }
     var actionSong by remember { mutableStateOf<Song?>(null) }
 
@@ -482,6 +498,9 @@ private fun SongsContent(
                         onClick = { viewModel.playSongs(sortedSongs, index, openPlayer = true) },
                         onMore = { actionSong = song },
                     )
+                    if (index in adIndices) {
+                        ListNativeAd("home_songs_$index", Modifier.padding(vertical = 8.dp))
+                    }
                 }
             }
         }
@@ -504,7 +523,7 @@ internal fun SongRow(song: Song, isPlayingRow: Boolean, onClick: () -> Unit, onM
             .fillMaxWidth()
             .height(60.dp)
             .clickable(onClick = onClick)
-            .padding(horizontal = 24.dp, vertical = 8.dp),
+            .padding(horizontal = 20.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.size(44.dp)) {
@@ -582,7 +601,7 @@ private fun FoldersContent(viewModel: PlayerViewModel, folders: List<FolderItem>
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = 100.dp),
     ) {
-        items(folders, key = { it.path }) { folder ->
+        itemsIndexed(folders, key = { _, folder -> folder.path }) { index, folder ->
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -624,6 +643,9 @@ private fun FoldersContent(viewModel: PlayerViewModel, folders: List<FolderItem>
                 )
             }
         }
+        item(key = "folder_ad_bottom") {
+            ListBannerAd("home_folders", Modifier.padding(vertical = 8.dp))
+        }
     }
     actionFolder?.let { folder ->
         CollectionActionsSheet(
@@ -639,6 +661,12 @@ private fun FoldersContent(viewModel: PlayerViewModel, folders: List<FolderItem>
 /** Albums 标签 */
 @Composable
 private fun AlbumsContent(viewModel: PlayerViewModel, albums: List<AlbumItem>, libraryLoaded: Boolean) {
+    val adsManager = (LocalContext.current.applicationContext as com.beeze.music.BeezeApplication).adsManager
+    val adsReady by adsManager.adsReady.collectAsStateWithLifecycle()
+    val adIndices = remember(albums) { adInsertionIndices(albums.size, 8, albums.hashCode()) }
+    LaunchedEffect(adsReady, adIndices) {
+        if (adsReady) adsManager.preloadNativeAds("home_albums", adIndices)
+    }
     var actionAlbum by remember { mutableStateOf<AlbumItem?>(null) }
     if (albums.isEmpty()) {
         if (libraryLoaded) {
@@ -652,7 +680,7 @@ private fun AlbumsContent(viewModel: PlayerViewModel, albums: List<AlbumItem>, l
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = 100.dp),
     ) {
-        items(albums, key = { it.key }) { album ->
+        itemsIndexed(albums, key = { _, album -> album.key }) { index, album ->
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -687,6 +715,9 @@ private fun AlbumsContent(viewModel: PlayerViewModel, albums: List<AlbumItem>, l
                         .size(24.dp)
                         .iconClickable { actionAlbum = album },
                 )
+            }
+            if (index in adIndices) {
+                ListNativeAd("home_albums_$index", Modifier.padding(vertical = 8.dp))
             }
         }
     }
@@ -748,6 +779,12 @@ private fun AlbumCover(album: AlbumItem) {
 /** Artists 标签 */
 @Composable
 private fun ArtistsContent(viewModel: PlayerViewModel, artists: List<ArtistItem>, libraryLoaded: Boolean) {
+    val adsManager = (LocalContext.current.applicationContext as com.beeze.music.BeezeApplication).adsManager
+    val adsReady by adsManager.adsReady.collectAsStateWithLifecycle()
+    val adIndices = remember(artists) { adInsertionIndices(artists.size, 11, artists.hashCode()) }
+    LaunchedEffect(adsReady, adIndices) {
+        if (adsReady) adsManager.preloadNativeAds("home_artists", adIndices)
+    }
     var actionArtist by remember { mutableStateOf<ArtistItem?>(null) }
     if (artists.isEmpty()) {
         if (libraryLoaded) {
@@ -761,7 +798,7 @@ private fun ArtistsContent(viewModel: PlayerViewModel, artists: List<ArtistItem>
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = 100.dp),
     ) {
-        items(artists, key = { it.name }) { artist ->
+        itemsIndexed(artists, key = { _, artist -> artist.name }) { index, artist ->
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -794,6 +831,9 @@ private fun ArtistsContent(viewModel: PlayerViewModel, artists: List<ArtistItem>
                         .size(24.dp)
                         .iconClickable { actionArtist = artist },
                 )
+            }
+            if (index in adIndices) {
+                ListNativeAd("home_artists_$index", Modifier.padding(vertical = 8.dp))
             }
         }
     }

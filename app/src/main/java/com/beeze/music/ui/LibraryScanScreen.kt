@@ -73,6 +73,7 @@ fun LibraryScanScreen(viewModel: PlayerViewModel) {
     val scanning by viewModel.scanning.collectAsStateWithLifecycle()
     val progress by viewModel.scanProgress.collectAsStateWithLifecycle()
     val result by viewModel.scanResult.collectAsStateWithLifecycle()
+    val scanError by viewModel.scanError.collectAsStateWithLifecycle()
     val skipShortAudio by viewModel.skipShortAudio.collectAsStateWithLifecycle()
     val filteredSongs by viewModel.filteredSongs.collectAsStateWithLifecycle()
     val filteredFolders by viewModel.filteredFolders.collectAsStateWithLifecycle()
@@ -113,6 +114,7 @@ fun LibraryScanScreen(viewModel: PlayerViewModel) {
                     scanned = progress.scanned,
                     total = progress.total,
                     result = result,
+                    hasError = scanError,
                     onRescan = viewModel::openScan,
                     onListen = viewModel::closeScan,
                 )
@@ -152,6 +154,7 @@ private fun ScanContent(
     scanned: Int,
     total: Int,
     result: ScanResult?,
+    hasError: Boolean,
     onRescan: () -> Unit,
     onListen: () -> Unit,
 ) {
@@ -159,10 +162,10 @@ private fun ScanContent(
         Box(Modifier.fillMaxWidth().weight(1f)) {
             ScanVisualization(scanning)
         }
-        if (scanning || result == null) {
-            ScanProgress(scanned, total)
-        } else {
-            ScanResultActions(result, onRescan, onListen)
+        when {
+            hasError -> ScanError(onRescan)
+            scanning || result == null -> ScanProgress(scanned, total)
+            else -> ScanResultActions(result, onRescan, onListen)
         }
         Spacer(Modifier.height(28.dp))
         Text(
@@ -173,6 +176,25 @@ private fun ScanContent(
             modifier = Modifier.fillMaxWidth().padding(horizontal = 40.dp),
         )
         Spacer(Modifier.height(32.dp))
+    }
+}
+
+@Composable
+internal fun ScanError(onRetry: () -> Unit) {
+    Column(
+        Modifier.fillMaxWidth().padding(horizontal = 32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(tr(R.string.scan_failed), style = BeezeType.title, color = BeezeColors.Ink)
+        Spacer(Modifier.height(8.dp))
+        Text(
+            tr(R.string.scan_failed_description),
+            style = BeezeType.caption,
+            color = BeezeColors.Muted,
+            textAlign = TextAlign.Center,
+        )
+        Spacer(Modifier.height(16.dp))
+        ScanResultButton(tr(R.string.retry), onRetry, Modifier.fillMaxWidth())
     }
 }
 

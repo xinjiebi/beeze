@@ -166,6 +166,12 @@ private fun SongListDetail(viewModel: PlayerViewModel, page: DetailPage.SongList
         val byId = allSongs.associateBy { it.id }
         songIds.mapNotNull { byId[it] }
     }
+    val adsManager = (LocalContext.current.applicationContext as com.beeze.music.BeezeApplication).adsManager
+    val adsReady by adsManager.adsReady.collectAsStateWithLifecycle()
+    val adKey = page.playlistId?.let { "detail_playlist_$it" } ?: "detail_recent"
+    LaunchedEffect(adsReady, adKey, songs) {
+        if (adsReady && songs.isNotEmpty()) adsManager.getNativeAd(adKey)
+    }
     DetailBody(
         viewModel = viewModel,
         title = page.playlistId?.let { id -> playlists.firstOrNull { it.id == id }?.name } ?: page.title,
@@ -175,6 +181,8 @@ private fun SongListDetail(viewModel: PlayerViewModel, page: DetailPage.SongList
         onMultiSelect = onMultiSelect,
         sortScope = if (page.playlistId == null && page.sortable) SongSortScope.Generic else null,
         playlistId = page.playlistId,
+        adKey = adKey,
+        showListAd = true,
     )
 }
 
@@ -187,6 +195,13 @@ private fun EntryDetail(viewModel: PlayerViewModel, page: DetailPage.EntryList, 
     val songs = remember(allSongs, page.songIds) {
         val byId = allSongs.associateBy { it.id }
         page.songIds.mapNotNull { byId[it] }
+    }
+    val adsManager = (LocalContext.current.applicationContext as com.beeze.music.BeezeApplication).adsManager
+    val adsReady by adsManager.adsReady.collectAsStateWithLifecycle()
+    LaunchedEffect(adsReady, page.kind, songs) {
+        if (adsReady && page.kind == EntryKind.Liked && songs.isNotEmpty()) {
+            adsManager.getNativeAd("detail_liked")
+        }
     }
     val cover = when (page.kind) {
         EntryKind.LyricSync -> covers.lyric
@@ -213,6 +228,8 @@ private fun EntryDetail(viewModel: PlayerViewModel, page: DetailPage.EntryList, 
             // 头部高度：132 封面 + 8 + 28 标题 + 2 + 52 副标题（两行）
             headerHeight = 222.dp,
             header = { EntryHeader(page.kind, cover) },
+            adKey = "detail_liked",
+            showListAd = page.kind == EntryKind.Liked,
             onCollapseFractionChanged = { collapseFraction = it },
         )
     }
@@ -338,12 +355,15 @@ private fun DetailBody(
     onMultiSelect: (List<Song>) -> Unit = {},
     sortScope: SongSortScope? = null,
     playlistId: Long? = null,
+    adKey: String = "",
+    showListAd: Boolean = false,
     onCollapseFractionChanged: (Float) -> Unit = {},
 ) {
     val context = LocalContext.current
     val sortOptions by viewModel.sortOptions.collectAsStateWithLifecycle()
     val sortOption = sortScope?.let { sortOptions[it] } ?: SongSortOption.Default
     val displayedSongs = remember(songs, sortOption) { songs.sortedForDisplay(sortOption) }
+    val adIndex = remember(displayedSongs) { adAfterIndex(displayedSongs.size, 8) }
     var showSortSheet by remember { mutableStateOf(false) }
     var actionSong by remember { mutableStateOf<Song?>(null) }
     var showPlaylistActions by remember { mutableStateOf(false) }
@@ -439,6 +459,9 @@ private fun DetailBody(
                             onClick = { viewModel.playSongs(displayedSongs, index, openPlayer = true) },
                             onMore = { actionSong = song },
                         )
+                        if (showListAd && displayedSongs.isNotEmpty() && index == adIndex) {
+                            ListNativeAd(adKey, Modifier.padding(vertical = 8.dp))
+                        }
                     }
                 }
             }

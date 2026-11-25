@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.ComponentName
 import android.content.ContentUris
 import android.net.Uri
+import android.os.Bundle
 import android.os.SystemClock
 import androidx.core.content.ContextCompat
 import androidx.annotation.StringRes
@@ -12,7 +13,10 @@ import androidx.lifecycle.viewModelScope
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
+import androidx.media3.session.SessionCommand
+import androidx.media3.session.SessionResult
 import androidx.media3.session.SessionToken
 import com.beeze.music.data.ALBUM_ART_BASE_URI
 import com.beeze.music.data.AlbumItem
@@ -28,6 +32,8 @@ import com.beeze.music.data.ListeningStore
 import com.beeze.music.data.LyricsFolder
 import com.beeze.music.data.LyricsRepository
 import com.beeze.music.data.MediaStoreRepository
+import com.beeze.music.data.PlaybackSnapshot
+import com.beeze.music.data.PlaybackStateStore
 import com.beeze.music.data.Playlist
 import com.beeze.music.data.PlaylistStore
 import com.beeze.music.data.Song
@@ -41,7 +47,9 @@ import com.beeze.music.player.PlaybackService
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -65,7 +73,7 @@ data class ScanProgress(val scanned: Int = 0, val total: Int = 0)
 data class ScanResult(val addedSongs: Int, val totalSongs: Int)
 
 /** 播放模式：列表循环 → 单曲循环 → 随机，循环切换（Figma 6:195 / 6:199 / 6:202）。
- *  每次启动默认列表循环，不持久化；只有从「Shuffle」入口播放才是随机 */
+ *  随上次播放快照保存；只有从「Shuffle」入口播放时才主动切到随机 */
 enum class PlayMode {
     RepeatAll, RepeatOne, Shuffle;
 
@@ -111,6 +119,10 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private val songSortStore = SongSortStore(application)
     private val songTitleStore = SongTitleStore(application)
     private val appSettingsStore = AppSettingsStore(application)
+    private val playbackStateStore = PlaybackStateStore(application)
+    private var pendingPlaybackRestore = playbackStateStore.load()
+    private var playbackSaveJob: Job? = null
+    private var skipNextPlayRecord = false
 
     private val _appearanceMode = MutableStateFlow(appSettingsStore.appearance)
     val appearanceMode: StateFlow<AppearanceMode> = _appearanceMode
@@ -166,6 +178,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private val _scanResult = MutableStateFlow<ScanResult?>(null)
     val scanResult: StateFlow<ScanResult?> = _scanResult
 
+    private val _scanError = MutableStateFlow(false)
+    val scanError: StateFlow<Boolean> = _scanError
+
     private val _folders = MutableStateFlow<List<FolderItem>>(emptyList())
     val folders: StateFlow<List<FolderItem>> = _folders
 
@@ -213,7 +228,10 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private val _isPlaying = MutableStateFlow(false)
     val isPlaying: StateFlow<Boolean> = _isPlaying
 
-    /** 播放模式（循环/单曲/随机），默认列表循环，不持久化（重启后回到循环） */
+    private val _playbackError = MutableSharedFlow<String>(extraBufferCapacity = 1)
+    val playbackError: SharedFlow<String> = _playbackError
+
+    /** 播放模式随队列快照恢复；没有快照时默认列表循环 */
     private val _playMode = MutableStateFlow(PlayMode.RepeatAll)
     val playMode: StateFlow<PlayMode> = _playMode
 
@@ -313,13 +331,33 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     /** mediaId -> Song 映射，用于从播放器回调还原曲目信息 */
     private val songByMediaId = mutableMapOf<String, Song>()
 
+    private val controllerListener = object : MediaController.Listener {
+        override fun onExtrasChanged(controller: MediaController, extras: Bundle) {
+            updateSleepTimerEndAt(extras.getLong(PlaybackService.EXTRA_SLEEP_TIMER_END_AT, 0L))
+        }
+
+        override fun onCustomCommand(
+            controller: MediaController,
+            command: SessionCommand,
+            args: Bundle,
+        ): com.google.common.util.concurrent.ListenableFuture<SessionResult> {
+            if (command.customAction == PlaybackService.EVENT_PLAYBACK_ERROR) {
+                val title = args.getString(PlaybackService.EXTRA_SONG_TITLE)
+                    ?.ifBlank { null }
+                    ?: getApplication<Application>().getString(R.string.unknown_title)
+                _playbackError.tryEmit(title)
+            }
+            return com.google.common.util.concurrent.Futures.immediateFuture(
+                SessionResult(SessionResult.RESULT_SUCCESS)
+            )
+        }
+    }
+
     init {
         LyricsRepository.initialize(application)
         viewModelScope.launch {
             _lyricsFolders.value = withContext(Dispatchers.IO) { LyricsRepository.folders() }
         }
-        connectController()
-        startPositionTicker()
         // 冷启动同步读缓存（~80KB 小文件，主线程 <100ms），首帧直接渲染列表
         repository.readCachedSongs()?.let { cached ->
             if (cached.isNotEmpty()) applySongs(cached)
@@ -448,6 +486,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     fun loadSongs() {
         if (_scanning.value) return
         _scanning.value = true
+        _scanError.value = false
         _scanProgress.value = ScanProgress()
         val previousIds = _songs.value.mapTo(mutableSetOf()) { it.id }
         viewModelScope.launch {
@@ -467,6 +506,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                         totalSongs = list.size,
                     )
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                _scanResult.value = null
+                _scanError.value = true
             } finally {
                 _scanning.value = false
             }
@@ -481,6 +525,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         _artists.value = repository.groupByArtist(displayList)
         _libraryLoaded.value = true
         displayList.forEach { songByMediaId[it.id.toString()] = it }
+        restorePlaybackIfReady()
         refreshForYou()
         // Featured 只在冷启动媒体库加载时刷新一次（进入 For you 页不再实时刷新）
         refreshFeatured()
@@ -771,6 +816,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     fun playSongs(list: List<Song>, startIndex: Int, openPlayer: Boolean = false) {
         if (list.isEmpty()) return
         val c = controller ?: return
+        pendingPlaybackRestore = null
+        skipNextPlayRecord = false
         queueVersion++
         list.forEach { songByMediaId[it.id.toString()] = it }
         c.setMediaItems(list.map { it.toMediaItem() }, startIndex.coerceIn(list.indices), 0L)
@@ -785,6 +832,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     fun playShuffled(list: List<Song>) {
         if (list.isEmpty()) return
         val c = controller ?: return
+        pendingPlaybackRestore = null
+        skipNextPlayRecord = false
         queueVersion++
         list.forEach { songByMediaId[it.id.toString()] = it }
         c.setMediaItems(list.map { it.toMediaItem() })
@@ -886,6 +935,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     /** 清空队列并停止播放 */
     fun clearQueue() {
         val c = controller ?: return
+        pendingPlaybackRestore = null
+        skipNextPlayRecord = false
         queueVersion++
         c.stop()
         c.clearMediaItems()
@@ -901,46 +952,86 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     // ---------- 定时关闭 ----------
 
-    /** 定时关闭剩余毫秒数；null = 未开启 */
+    /** 定时关闭剩余毫秒数；null = 未开启。实际暂停由 PlaybackService 执行。 */
     private val _sleepTimerRemainingMs = MutableStateFlow<Long?>(null)
     val sleepTimerRemainingMs: StateFlow<Long?> = _sleepTimerRemainingMs
-
-    private var sleepTimerJob: Job? = null
+    private var sleepTimerEndAtMs = 0L
 
     /** 设置定时关闭：durationMs 后暂停播放（重复设置则替换）；传 0 取消 */
     fun setSleepTimer(durationMs: Long) {
-        sleepTimerJob?.cancel()
-        sleepTimerJob = null
-        if (durationMs <= 0L) {
-            _sleepTimerRemainingMs.value = null
+        val c = controller ?: return
+        val endAtMs = if (durationMs > 0L) SystemClock.elapsedRealtime() + durationMs else 0L
+        updateSleepTimerEndAt(endAtMs)
+        c.sendCustomCommand(
+            PlaybackService.SET_SLEEP_TIMER_COMMAND,
+            Bundle().apply { putLong(PlaybackService.EXTRA_SLEEP_TIMER_END_AT, endAtMs) },
+        )
+    }
+
+    private fun updateSleepTimerEndAt(endAtMs: Long) {
+        sleepTimerEndAtMs = endAtMs.coerceAtLeast(0L)
+        updateSleepTimerRemaining()
+    }
+
+    private fun updateSleepTimerRemaining() {
+        val remaining = sleepTimerEndAtMs - SystemClock.elapsedRealtime()
+        _sleepTimerRemainingMs.value = remaining.takeIf { sleepTimerEndAtMs > 0L && it > 0L }
+    }
+
+    private fun restorePlaybackIfReady() {
+        val snapshot = pendingPlaybackRestore ?: return
+        val c = controller ?: return
+        if (c.mediaItemCount > 0) {
+            pendingPlaybackRestore = null
             return
         }
-        sleepTimerJob = viewModelScope.launch {
-            // 用本机时钟记截止时间，避免 delay 累计误差
-            val endAt = SystemClock.elapsedRealtime() + durationMs
-            while (true) {
-                val remaining = endAt - SystemClock.elapsedRealtime()
-                if (remaining <= 0L) break
-                _sleepTimerRemainingMs.value = remaining
-                delay(1000)
-            }
-            _sleepTimerRemainingMs.value = null
-            controller?.pause()
+        if (!_hasPermission.value || !_libraryLoaded.value) return
+        pendingPlaybackRestore = null
+
+        val byId = _songs.value.associateBy { it.id }
+        val restoredSongs = snapshot.songIds.mapNotNull(byId::get)
+        if (restoredSongs.isEmpty()) {
+            playbackStateStore.clear()
+            return
         }
+        val savedIndex = restoredSongs.indexOfFirst { it.id == snapshot.currentSongId }
+        val startIndex = savedIndex.coerceAtLeast(0)
+        val positionMs = if (savedIndex >= 0) {
+            snapshot.positionMs.coerceAtMost(restoredSongs[startIndex].durationMs.coerceAtLeast(0L))
+        } else {
+            0L
+        }
+        val mode = runCatching { PlayMode.valueOf(snapshot.playMode) }
+            .getOrDefault(PlayMode.RepeatAll)
+
+        skipNextPlayRecord = true
+        queueVersion++
+        c.pause()
+        c.setMediaItems(restoredSongs.map { it.toMediaItem() }, startIndex, positionMs)
+        applyPlayMode(mode)
+        c.prepare()
     }
 
     // ---------- MediaController 连接 ----------
 
+    @androidx.annotation.OptIn(markerClass = [UnstableApi::class])
     private fun connectController() {
         val context = getApplication<Application>()
         val sessionToken = SessionToken(context, ComponentName(context, PlaybackService::class.java))
-        val future = MediaController.Builder(context, sessionToken).buildAsync()
+        val future = MediaController.Builder(context, sessionToken)
+            .setListener(controllerListener)
+            .buildAsync()
         future.addListener({
             val c = future.get()
             controller = c
             c.addListener(playerListener)
-            // 默认列表循环（修正 ExoPlayer 默认播完即停）；不恢复上次模式，重启后总是循环
-            applyPlayMode(PlayMode.RepeatAll)
+            updateSleepTimerEndAt(c.sessionExtras.getLong(PlaybackService.EXTRA_SLEEP_TIMER_END_AT, 0L))
+            if (pendingPlaybackRestore == null || c.mediaItemCount > 0) {
+                pendingPlaybackRestore = null
+                // 没有待恢复快照时维持默认列表循环；已有服务队列则沿用实际状态
+                if (c.mediaItemCount == 0) applyPlayMode(PlayMode.RepeatAll)
+            }
+            restorePlaybackIfReady()
             syncFromController(c)
         }, ContextCompat.getMainExecutor(context))
     }
@@ -955,6 +1046,10 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             // 单曲循环的重复触发不算新的一次播放
             if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT) return
             val id = mediaItem?.mediaId?.toLongOrNull() ?: return
+            if (skipNextPlayRecord) {
+                skipNextPlayRecord = false
+                return
+            }
             listeningStore.recordPlay(id)
             refreshForYou()
         }
@@ -974,6 +1069,45 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         _durationMs.value = if (duration > 0) duration else (_currentSong.value?.durationMs ?: 0L)
         _positionMs.value = player.currentPosition.coerceAtLeast(0L)
         syncQueue(player)
+        schedulePlaybackStateSave()
+    }
+
+    private fun schedulePlaybackStateSave() {
+        if (pendingPlaybackRestore != null) return
+        playbackSaveJob?.cancel()
+        val snapshot = playbackSnapshot()
+        playbackSaveJob = viewModelScope.launch {
+            delay(500)
+            withContext(Dispatchers.IO) { writePlaybackSnapshot(snapshot) }
+        }
+    }
+
+    private fun playbackSnapshot(): PlaybackSnapshot? {
+        val c = controller ?: return null
+        if (c.mediaItemCount == 0) return null
+        val currentSongId = c.currentMediaItem?.mediaId?.toLongOrNull() ?: return null
+        return PlaybackSnapshot(
+            songIds = (0 until c.mediaItemCount).mapNotNull {
+                c.getMediaItemAt(it).mediaId.toLongOrNull()
+            },
+            currentSongId = currentSongId,
+            positionMs = c.currentPosition.coerceAtLeast(0L),
+            playMode = _playMode.value.name,
+        )
+    }
+
+    private fun writePlaybackSnapshot(snapshot: PlaybackSnapshot?) {
+        if (snapshot == null) playbackStateStore.clear() else playbackStateStore.save(snapshot)
+    }
+
+    fun onBackground() {
+        listeningStore.flush()
+        if (pendingPlaybackRestore != null) return
+        playbackSaveJob?.cancel()
+        val snapshot = playbackSnapshot()
+        playbackSaveJob = viewModelScope.launch(Dispatchers.IO) {
+            writePlaybackSnapshot(snapshot)
+        }
     }
 
     /** 同步播放队列：只在队列结构或当前位置变化时重建，避免 seek 时整列表刷新 */
@@ -997,6 +1131,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private fun startPositionTicker() {
         viewModelScope.launch {
             while (isActive) {
+                updateSleepTimerRemaining()
                 controller?.let { c ->
                     if (c.isPlaying) {
                         _positionMs.value = c.currentPosition.coerceAtLeast(0L)
@@ -1005,6 +1140,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                         if (++listeningFlushTicks >= 30) {
                             listeningFlushTicks = 0
                             listeningStore.flush()
+                            schedulePlaybackStateSave()
                         }
                     }
                 }
@@ -1030,8 +1166,16 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             )
             .build()
 
+    init {
+        // 监听器和定时器状态分散在各功能分区，全部初始化后再启动异步连接与轮询
+        connectController()
+        startPositionTicker()
+    }
+
     override fun onCleared() {
         listeningStore.flush()
+        playbackSaveJob?.cancel()
+        if (pendingPlaybackRestore == null) writePlaybackSnapshot(playbackSnapshot())
         controller?.release()
         controller = null
         super.onCleared()

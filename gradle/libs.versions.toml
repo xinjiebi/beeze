@@ -6,6 +6,8 @@ activityCompose = "1.9.3"
 lifecycle = "2.8.7"
 media3 = "1.5.1"
 coil = "2.7.0"
+mobileAds = "24.8.0"
+userMessagingPlatform = "4.0.0"
 
 [libraries]
 compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
@@ -22,6 +24,8 @@ media3-exoplayer = { group = "androidx.media3", name = "media3-exoplayer", versi
 media3-session = { group = "androidx.media3", name = "media3-session", version.ref = "media3" }
 media3-ui = { group = "androidx.media3", name = "media3-ui", version.ref = "media3" }
 coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coil" }
+mobile-ads = { group = "com.google.android.gms", name = "play-services-ads", version.ref = "mobileAds" }
+user-messaging-platform = { group = "com.google.android.ump", name = "user-messaging-platform", version.ref = "userMessagingPlatform" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
