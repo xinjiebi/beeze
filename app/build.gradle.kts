@@ -54,6 +54,8 @@ android {
                 "proguard-rules.pro",
             )
             signingConfig = signingConfigs.getByName("upload")
+            // 生成 native 调试符号（androidx.graphics.path），供 Play Console 崩溃符号化
+            ndk { debugSymbolLevel = "FULL" }
         }
     }
     compileOptions {
