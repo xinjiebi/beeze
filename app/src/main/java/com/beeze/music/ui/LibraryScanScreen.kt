@@ -59,6 +59,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.beeze.music.PlayerViewModel
 import com.beeze.music.R
 import com.beeze.music.ScanResult
+import com.beeze.music.data.AudioFormatSupport
 import com.beeze.music.data.FilteredFolder
 import com.beeze.music.data.Song
 import com.beeze.music.ui.theme.BeezeColors
@@ -77,6 +78,7 @@ fun LibraryScanScreen(viewModel: PlayerViewModel) {
     val skipShortAudio by viewModel.skipShortAudio.collectAsStateWithLifecycle()
     val filteredSongs by viewModel.filteredSongs.collectAsStateWithLifecycle()
     val filteredFolders by viewModel.filteredFolders.collectAsStateWithLifecycle()
+    val unsupportedSongs by viewModel.unsupportedSongs.collectAsStateWithLifecycle()
 
     BackHandler {
         if (manageOpen) viewModel.closeScanManage() else viewModel.closeScan()
@@ -99,6 +101,7 @@ fun LibraryScanScreen(viewModel: PlayerViewModel) {
                     onSkipChanged = viewModel::setSkipShortAudio,
                     filteredSongs = filteredSongs,
                     filteredFolders = filteredFolders,
+                    unsupportedSongs = unsupportedSongs,
                     onRestoreSong = { song ->
                         viewModel.restoreFilteredSong(song)
                         showToast(context, context.getString(R.string.restored_item, song.title))
@@ -372,6 +375,7 @@ private fun ScanManagement(
     onSkipChanged: (Boolean) -> Unit,
     filteredSongs: List<Song>,
     filteredFolders: List<FilteredFolder>,
+    unsupportedSongs: List<Song>,
     onRestoreSong: (Song) -> Unit,
     onRestoreFolder: (FilteredFolder) -> Unit,
 ) {
@@ -401,7 +405,7 @@ private fun ScanManagement(
         }
         if (filteredSongs.isNotEmpty()) {
             item { FilterSectionTitle(tr(R.string.filtered_songs)) }
-            items(filteredSongs, key = { it.path }) { song ->
+            items(filteredSongs, key = { "filtered_${it.path}" }) { song ->
                 FilteredSongRow(song, onRestore = { onRestoreSong(song) })
             }
         }
@@ -409,6 +413,20 @@ private fun ScanManagement(
             item { FilterSectionTitle(tr(R.string.filtered_folders)) }
             items(filteredFolders, key = { it.path }) { folder ->
                 FilteredFolderRow(folder, onRestore = { onRestoreFolder(folder) })
+            }
+        }
+        if (unsupportedSongs.isNotEmpty()) {
+            item {
+                Text(
+                    tr(R.string.unsupported_songs_explanation),
+                    style = BeezeType.caption,
+                    color = BeezeColors.Muted,
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+                )
+            }
+            item { FilterSectionTitle(tr(R.string.unsupported_songs)) }
+            items(unsupportedSongs, key = { "unsupported_${it.path}" }) { song ->
+                UnsupportedSongRow(song)
             }
         }
     }
@@ -473,8 +491,19 @@ private fun FilteredFolderRow(folder: FilteredFolder, onRestore: () -> Unit) {
     )
 }
 
+/** 不可播歌曲：展示格式标签，不提供恢复入口（恢复了设备也播不了） */
 @Composable
-private fun FilterRow(title: String, subtitle: String, onRestore: () -> Unit, leading: @Composable () -> Unit) {
+private fun UnsupportedSongRow(song: Song) {
+    FilterRow(
+        title = song.title,
+        subtitle = "${AudioFormatSupport.formatLabel(song.path)} · ${song.artist}",
+        onRestore = null,
+        leading = { CoverImage(song.artwork, 44.dp, RoundedCornerShape(8.dp)) },
+    )
+}
+
+@Composable
+private fun FilterRow(title: String, subtitle: String, onRestore: (() -> Unit)?, leading: @Composable () -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth().height(60.dp).padding(horizontal = 20.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -485,13 +514,15 @@ private fun FilterRow(title: String, subtitle: String, onRestore: () -> Unit, le
             Text(title, style = BeezeType.button, color = BeezeColors.Body, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text(subtitle, style = BeezeType.caption, color = BeezeColors.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
-        Spacer(Modifier.width(12.dp))
-        Text(
-            tr(R.string.restore),
-            style = BeezeType.caption,
-            color = BeezeColors.Primary,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.clickable(onClick = onRestore),
-        )
+        if (onRestore != null) {
+            Spacer(Modifier.width(12.dp))
+            Text(
+                tr(R.string.restore),
+                style = BeezeType.caption,
+                color = BeezeColors.Primary,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.clickable(onClick = onRestore),
+            )
+        }
     }
 }

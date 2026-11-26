@@ -21,8 +21,8 @@ android {
         applicationId = "com.beeze.music"
         minSdk = 26
         targetSdk = 36
-        versionCode = 4
-        versionName = "1.0.3"
+        versionCode = 5
+        versionName = "1.0.4"
         manifestPlaceholders["admobAppId"] = "ca-app-pub-8834917625965765~1911816538"
         buildConfigField("String", "ADMOB_BANNER_UNIT_ID", "\"ca-app-pub-8834917625965765/7387504490\"")
         buildConfigField("String", "ADMOB_APP_OPEN_UNIT_ID", "\"ca-app-pub-8834917625965765/7779541681\"")

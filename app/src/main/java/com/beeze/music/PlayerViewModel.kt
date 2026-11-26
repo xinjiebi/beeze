@@ -141,6 +141,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         val cached = withContext(Dispatchers.IO) { localizedRepository.readCachedSongs() }
         _appLanguage.value = language
         repository = localizedRepository
+        _unsupportedSongs.value = localizedRepository.unsupportedSongs
         if (!cached.isNullOrEmpty()) applySongs(cached)
         queueVersion++
         controller?.let(::syncFromController)
@@ -162,6 +163,10 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     private val _filteredFolders = MutableStateFlow(repository.filteredFolders)
     val filteredFolders: StateFlow<List<FilteredFolder>> = _filteredFolders
+
+    /** 设备不支持格式的歌曲（扫描/读缓存时分离出来，只在扫描管理页展示） */
+    private val _unsupportedSongs = MutableStateFlow(repository.unsupportedSongs)
+    val unsupportedSongs: StateFlow<List<Song>> = _unsupportedSongs
 
     private val _skipShortAudio = MutableStateFlow(repository.skipShortAudio)
     val skipShortAudio: StateFlow<Boolean> = _skipShortAudio
@@ -360,6 +365,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         }
         // 冷启动同步读缓存（~80KB 小文件，主线程 <100ms），首帧直接渲染列表
         repository.readCachedSongs()?.let { cached ->
+            _unsupportedSongs.value = repository.unsupportedSongs
             if (cached.isNotEmpty()) applySongs(cached)
         }
     }
@@ -494,6 +500,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 val list = repository.querySongs { scanned, total ->
                     _scanProgress.value = ScanProgress(scanned, total)
                 }
+                _unsupportedSongs.value = repository.unsupportedSongs
                 if (list != _songs.value || !_libraryLoaded.value) {
                     applySongs(list, reloadLyrics = true)
                 } else {

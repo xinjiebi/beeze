@@ -76,6 +76,8 @@
     <string name="filter_delete_explanation">Deleting from Beeze never deletes the local file. Filtered songs/folders stay hidden during future scans and can be restored here.</string>
     <string name="filtered_songs">Filtered Songs</string>
     <string name="filtered_folders">Filtered Folders</string>
+    <string name="unsupported_songs">Unsupported Formats</string>
+    <string name="unsupported_songs_explanation">These songs use formats this device can’t play, so they’re hidden from your library. The local files are untouched.</string>
     <string name="restore">Restore</string>
 
     <string name="add_to_playlist">Add to Playlist</string>

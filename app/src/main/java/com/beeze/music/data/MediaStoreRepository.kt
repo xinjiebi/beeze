@@ -18,6 +18,10 @@ class MediaStoreRepository(private val context: Context) {
     private val filterStore = LibraryFilterStore(context)
     val filteredSongs: List<Song> get() = filterStore.songs
     val filteredFolders: List<FilteredFolder> get() = filterStore.folders
+
+    /** 最近一次查询/读缓存时检出的不可播歌曲（设备不支持的格式），不进曲库，供扫描管理页展示 */
+    var unsupportedSongs: List<Song> = emptyList()
+        private set
     var skipShortAudio: Boolean
         get() = filterStore.skipShortAudio
         set(value) { filterStore.skipShortAudio = value }
@@ -59,6 +63,7 @@ class MediaStoreRepository(private val context: Context) {
         onProgress: (scanned: Int, total: Int) -> Unit = { _, _ -> },
     ): List<Song> = withContext(Dispatchers.IO) {
         val songs = mutableListOf<Song>()
+        val unsupported = mutableListOf<Song>()
         val collection = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
         val projection = arrayOf(
             MediaStore.Audio.Media._ID,
@@ -96,7 +101,7 @@ class MediaStoreRepository(private val context: Context) {
                 if (path != null && !filterStore.contains(id, path) &&
                     (!skipShortAudio || durationMs >= 60_000L)
                 ) {
-                    songs += Song(
+                    val song = Song(
                         id = id,
                         title = cursor.getString(titleCol) ?: context.getString(R.string.unknown_title),
                         artist = cursor.getString(artistCol)?.takeIf { it != "<unknown>" }
@@ -109,6 +114,8 @@ class MediaStoreRepository(private val context: Context) {
                         path = path,
                         dateAddedSeconds = cursor.getLong(dateAddedCol),
                     )
+                    // 设备不支持格式的歌曲不进曲库，归入扫描管理页展示
+                    if (AudioFormatSupport.isSupported(path)) songs += song else unsupported += song
                 }
                 scanned++
                 if (scanned == total || scanned % 4 == 0) onProgress(scanned, total)
@@ -117,6 +124,8 @@ class MediaStoreRepository(private val context: Context) {
         // 本地化排序放在内存中做（中文按拼音、英文按字母混排 A→Z，非字母开头的 # 组排最后），
         // 兼容不支持 COLLATE LOCALIZED 的 ROM
         songs.sortWith(compareBy { sortKeyOf(it.title) })
+        unsupported.sortWith(compareBy { sortKeyOf(it.title) })
+        unsupportedSongs = unsupported
         songs
     }
 
@@ -163,7 +172,7 @@ class MediaStoreRepository(private val context: Context) {
     /** 同步读缓存（~80KB 小文件，冷启动时直接在主线程调用，首帧即可渲染列表） */
     fun readCachedSongs(): List<Song>? = runCatching {
         val arr = JSONArray(cacheFile.readText())
-        buildList {
+        val all = buildList {
             for (i in 0 until arr.length()) {
                 val o = arr.getJSONObject(i)
                 val id = o.getLong("id")
@@ -192,6 +201,10 @@ class MediaStoreRepository(private val context: Context) {
         }.filterNot {
             filterStore.contains(it.id, it.path) || (skipShortAudio && it.durationMs < 60_000L)
         }
+        // 与扫描路径一致：不可播格式从曲库分离
+        val (supported, unsupported) = all.partition { AudioFormatSupport.isSupported(it.path) }
+        unsupportedSongs = unsupported
+        supported
     }.getOrNull()
 
     suspend fun saveCachedSongs(songs: List<Song>) = withContext(Dispatchers.IO) {

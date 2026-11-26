@@ -25,6 +25,9 @@ class PlaybackService : MediaSessionService() {
     private var mediaSession: MediaSession? = null
     private val handler = Handler(Looper.getMainLooper())
     private var sleepTimerEndAtMs = 0L
+    private var consecutivePlaybackErrors = 0
+    /** 瞬态音频错误已原地重试过的媒体项，避免对同一项反复重试 */
+    private var retriedMediaId: String? = null
 
     private val sleepTimerRunnable = Runnable {
         sleepTimerEndAtMs = 0L
@@ -76,10 +79,29 @@ class PlaybackService : MediaSessionService() {
         player.addListener(object : Player.Listener {
             override fun onPlayerError(error: PlaybackException) {
                 val title = player.currentMediaItem?.mediaMetadata?.title?.toString().orEmpty()
+                android.util.Log.w("PlaybackService", "播放失败: $title, code=${error.errorCodeName}", error)
+                val mediaId = player.currentMediaItem?.mediaId
+                // 音频管线瞬态错误（如 ROM 音效引擎重建输出链路）重试几乎必成功，
+                // 原地静默重试一次，仍失败再走提示+跳下一首
+                if (isTransientAudioError(error) && mediaId != null && retriedMediaId != mediaId) {
+                    retriedMediaId = mediaId
+                    player.prepare()
+                    player.play()
+                    return
+                }
+                retriedMediaId = null
                 mediaSession?.broadcastCustomCommand(
                     PLAYBACK_ERROR_COMMAND,
                     Bundle().apply { putString(EXTRA_SONG_TITLE, title) },
                 )
+                skipToNextAfterError(player)
+            }
+
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                if (isPlaying) {
+                    consecutivePlaybackErrors = 0
+                    retriedMediaId = null
+                }
             }
         })
         mediaSession = MediaSession.Builder(this, player)
@@ -90,6 +112,41 @@ class PlaybackService : MediaSessionService() {
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? =
         mediaSession
+
+    /** 音频输出管线的瞬态错误：设备音效引擎/路由切换触发，重试一般即可恢复 */
+    private fun isTransientAudioError(error: PlaybackException): Boolean = when (error.errorCode) {
+        PlaybackException.ERROR_CODE_FAILED_RUNTIME_CHECK,
+        PlaybackException.ERROR_CODE_AUDIO_TRACK_INIT_FAILED,
+        PlaybackException.ERROR_CODE_AUDIO_TRACK_WRITE_FAILED,
+        PlaybackException.ERROR_CODE_AUDIO_TRACK_OFFLOAD_INIT_FAILED,
+        PlaybackException.ERROR_CODE_AUDIO_TRACK_OFFLOAD_WRITE_FAILED -> true
+        else -> false
+    }
+
+    /**
+     * 播放失败自动顺延下一首。出错后播放器处于 IDLE，需要重新 prepare。
+     * 单曲循环下 seekToNextMediaItem 会回到当前失败项，临时切列表循环完成跳转；
+     * 连续失败次数达到队列长度说明整列都播不了，停止避免死循环。
+     */
+    private fun skipToNextAfterError(player: ExoPlayer) {
+        val count = player.mediaItemCount
+        if (count == 0) return
+        consecutivePlaybackErrors++
+        if (consecutivePlaybackErrors >= count) {
+            player.stop()
+            return
+        }
+        val repeatMode = player.repeatMode
+        if (repeatMode == Player.REPEAT_MODE_ONE) player.repeatMode = Player.REPEAT_MODE_ALL
+        if (player.hasNextMediaItem()) {
+            player.seekToNextMediaItem()
+            player.prepare()
+            player.play()
+        } else {
+            player.stop()
+        }
+        if (repeatMode == Player.REPEAT_MODE_ONE) player.repeatMode = Player.REPEAT_MODE_ONE
+    }
 
     private fun setSleepTimer(endAtMs: Long) {
         handler.removeCallbacks(sleepTimerRunnable)

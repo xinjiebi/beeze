@@ -75,6 +75,8 @@
     <string name="filter_delete_explanation">从 Beeze 删除不会移除本地文件。已过滤的歌曲和文件夹将在后续扫描中保持隐藏，你可以在这里恢复。</string>
     <string name="filtered_songs">已过滤的歌曲</string>
     <string name="filtered_folders">已过滤的文件夹</string>
+    <string name="unsupported_songs">不支持的格式</string>
+    <string name="unsupported_songs_explanation">以下歌曲的格式不受当前设备支持，已从曲库中隐藏；本地文件不受影响。</string>
     <string name="restore">恢复</string>
 
     <string name="add_to_playlist">添加到歌单</string>

@@ -13,7 +13,6 @@ import android.view.ViewGroup
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
-import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.compose.foundation.Image
@@ -146,8 +145,11 @@ class MainActivity : ComponentActivity() {
                 .components { add(SongArtworkFetcher.Factory(this@MainActivity)) }
                 .build()
         )
-        // 透明沉浸式状态栏 + 深色图标
-        enableEdgeToEdge()
+        // 透明沉浸式：只操作 window 属性，不访问 decorView。
+        // 小米/红米机型杀进程后冷启动时，onCreate 早期创建 decor 会抛
+        // "Window couldn't find content container view"，故不用 enableEdgeToEdge()；
+        // 深浅色图标由 BeezeApp 的 DisposableEffect 在首帧设置。
+        WindowCompat.setDecorFitsSystemWindows(window, false)
         // 部分 ROM（如 MIUI）即使导航栏透明也会强制绘制白色手势条底板，需显式关闭对比度衬底
         if (Build.VERSION.SDK_INT >= 29) {
             window.isStatusBarContrastEnforced = false
@@ -155,12 +157,6 @@ class MainActivity : ComponentActivity() {
         }
         @Suppress("DEPRECATION")
         window.navigationBarColor = BeezeLightColors.Transparent.toArgb()
-        val darkTheme = resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK ==
-            android.content.res.Configuration.UI_MODE_NIGHT_YES
-        WindowCompat.getInsetsController(window, window.decorView).apply {
-            isAppearanceLightStatusBars = !darkTheme
-            isAppearanceLightNavigationBars = !darkTheme
-        }
         setContent {
             val appearance by viewModel.appearanceMode.collectAsStateWithLifecycle()
             val darkTheme = when (appearance) {

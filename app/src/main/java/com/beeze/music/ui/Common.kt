@@ -74,8 +74,12 @@ fun Modifier.topPurpleGradient(): Modifier {
     }
 }
 
+private var activeToast: Toast? = null
+
+/** 全局 Toast：新提示替换未消失的旧提示，避免连续失败时排队刷屏 */
 fun showToast(context: Context, message: String) {
-    Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
+    activeToast?.cancel()
+    activeToast = Toast.makeText(context, message, Toast.LENGTH_SHORT).also { it.show() }
 }
 
 /** 矢量资源提供图形，功能图标颜色统一读取当前主题。 */
